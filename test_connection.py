@@ -1,0 +1,41 @@
+# test_connection.py
+import ollama
+import chromadb
+from config import LLM_MODEL, EMBEDDING_MODEL, CHROMA_DB_PATH
+
+def test_llm():
+    print("Testing LLM connection...")
+    response = ollama.chat(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": "Say hello in one sentence."}]
+    )
+    print("LLM response:", response['message']['content'])
+    print("LLM: OK\n")
+
+def test_embeddings():
+    print("Testing embedding model...")
+    response = ollama.embeddings(
+        model=EMBEDDING_MODEL,
+        prompt="This is a test sentence."
+    )
+    vector = response['embedding']
+    print(f"Embedding length: {len(vector)} dimensions")
+    print("Embeddings: OK\n")
+
+def test_chromadb():
+    print("Testing ChromaDB...")
+    client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+    collection = client.get_or_create_collection("test_collection")
+    collection.add(
+        documents=["This is a test document"],
+        ids=["test1"]
+    )
+    results = collection.query(query_texts=["test"], n_results=1)
+    print("ChromaDB query result:", results['documents'])
+    print("ChromaDB: OK\n")
+
+if __name__ == "__main__":
+    test_llm()
+    test_embeddings()
+    test_chromadb()
+    print("All systems operational. You are ready to build.")
