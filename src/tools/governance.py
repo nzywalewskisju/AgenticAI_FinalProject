@@ -16,3 +16,159 @@
 #                   final_answer, grounding_score, compliance_passed)
 #     — appends a full interaction record to logs/audit_log.jsonl
 #     — called after every answered query, non-negotiable
+
+import json
+import os
+import uuid
+from datetime import datetime
+from config import ESCALATION_THRESHOLD, AUDIT_LOG_PATH
+from src.tools.utils import call_llm, safe_json_parse
+
+
+# Phrases that suggest the answer is guessing rather than grounded in policy.
+HEDGE_PHRASE_BLACKLIST = [
+    "typically", "generally speaking", "in most companies", "usually",
+    "it is common for", "many organizations", "as a general rule", "often",
+    "i believe", "i think", "you might want to", "perhaps", "probably"
+]
+
+# Topics that always escalate regardless of risk score.
+ALWAYS_ESCALATE_TOPICS = [
+    "harassment", "discrimination", "termination dispute", "fmla",
+    "medical accommodation", "legal threat", "retaliation", "whistleblower",
+    "hostile work environment", "wrongful termination", "ada accommodation"
+]
+
+
+def detect_pii(query: str) -> dict:
+    """
+    Scans the user's query for another employee's private information.
+    Returns {contains_pii: bool, reason: str}
+    """
+    system_prompt = """You are a privacy compliance checker for an HR system.
+Your job is to detect if a query contains private information belonging to another employee.
+This includes: another employee's name combined with sensitive context, social security numbers,
+medical details about someone else, salary details about a specific named employee,
+or any personally identifiable information about a person other than the user asking.
+It is fine for the user to mention facts about themselves.
+Respond only in JSON: {"contains_pii": true/false, "reason": "explanation"}"""
+
+    response = call_llm(query, system_prompt=system_prompt)
+    result = safe_json_parse(response, fallback={"contains_pii": False, "reason": ""})
+    return result
+
+
+def assess_escalation_risk(query: str) -> dict:
+    """
+    Scores the query 0.0 to 1.0 for escalation risk.
+    Also checks against ALWAYS_ESCALATE_TOPICS regardless of score.
+    Returns {risk_score: float, should_escalate: bool, reason: str}
+    """
+    query_lower = query.lower()
+    for topic in ALWAYS_ESCALATE_TOPICS:
+        if topic in query_lower:
+            return {
+                "risk_score": 1.0,
+                "should_escalate": True,
+                "reason": f"Query involves always-escalate topic: {topic}"
+            }
+
+    system_prompt = """You are a risk assessment tool for an HR policy assistant.
+Score the following query for escalation risk on a scale of 0.0 to 1.0.
+High risk (>= 0.75): harassment, discrimination, termination disputes, legal threats,
+  medical accommodation requests, retaliation claims, whistleblower situations.
+Medium risk (0.4 - 0.74): performance improvement plans, salary disputes, leave requests.
+Low risk (< 0.4): general policy questions, benefits questions, PTO inquiries.
+Respond only in JSON: {"risk_score": 0.0, "reason": "explanation"}"""
+
+    response = call_llm(query, system_prompt=system_prompt)
+    result = safe_json_parse(response, fallback={"risk_score": 0.0, "reason": ""})
+
+    risk_score = float(result.get("risk_score", 0.0))
+    should_escalate = risk_score >= ESCALATION_THRESHOLD
+
+    return {
+        "risk_score": risk_score,
+        "should_escalate": should_escalate,
+        "reason": result.get("reason", "")
+    }
+
+
+def compliance_stamp(answer: str) -> dict:
+    """
+    Scans the final answer for legally dangerous absolute statements
+    and hedge phrases from the blacklist.
+    Returns {passed: bool, flagged_phrases: list, reason: str}
+    """
+    flagged = []
+
+    for phrase in HEDGE_PHRASE_BLACKLIST:
+        if phrase.lower() in answer.lower():
+            flagged.append(phrase)
+
+    system_prompt = """You are a legal compliance checker for an HR policy assistant.
+Scan the following answer for legally dangerous absolute statements.
+Flag phrases like: "you are entitled to", "the company must", "you are guaranteed",
+"you will receive", "you cannot be fired", "the law requires", "you are legally protected".
+These are dangerous because the assistant is not a lawyer and cannot make legal guarantees.
+Respond only in JSON: {"legally_dangerous": true/false, "flagged_phrases": [], "reason": "explanation"}"""
+
+    response = call_llm(answer, system_prompt=system_prompt)
+    result = safe_json_parse(response, fallback={"legally_dangerous": False, "flagged_phrases": [], "reason": ""})
+
+    all_flagged = flagged + result.get("flagged_phrases", [])
+    passed = not result.get("legally_dangerous", False) and len(flagged) == 0
+
+    return {
+        "passed": passed,
+        "flagged_phrases": all_flagged,
+        "reason": result.get("reason", "")
+    }
+
+
+def write_audit_log(
+    session_id: str,
+    user_id: str,
+    query: str,
+    route: str,
+    escalated: bool,
+    chunks_used: list,
+    situation_facts: str,
+    final_answer: str,
+    grounding_score: float,
+    compliance_passed: bool
+) -> None:
+    """
+    Appends a full interaction record to logs/audit_log.jsonl.
+    Called after every answered query — non-negotiable.
+    Never raises an exception — audit logging must never crash the system.
+    """
+    os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
+
+    entry = {
+        "entry_id": str(uuid.uuid4()),
+        "session_id": session_id,
+        "user_id": user_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "query": query,
+        "route": route,
+        "escalated": escalated,
+        "situation_facts": situation_facts,
+        "chunks_used": [
+            {
+                "document_name": c.get("metadata", {}).get("document_name", ""),
+                "section_header": c.get("metadata", {}).get("section_header", ""),
+                "chunk_index": c.get("metadata", {}).get("chunk_index", 0)
+            }
+            for c in (chunks_used or [])
+        ],
+        "final_answer": final_answer,
+        "grounding_score": grounding_score,
+        "compliance_passed": compliance_passed
+    }
+
+    try:
+        with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        print(f"[AUDIT LOG ERROR] Failed to write audit entry: {e}")
