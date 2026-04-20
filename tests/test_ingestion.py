@@ -1,8 +1,16 @@
-# test_ingestion.py
-# tests for the ingestion pipeline — run these after building src/ingestion/
-# what to test:
-#   - loader.py correctly reads a sample PDF and returns text
-#   - loader.py correctly reads a sample .docx and returns text
-#   - chunker.py splits text into chunks with correct metadata attached
-#   - embedder.py stores chunks in chromadb and they can be retrieved
-# run with: python -m pytest tests/test_ingestion.py
+# tests/test_ingestion.py
+# Unit tests for the ingestion pipeline.
+# Tests loader.py:
+#   - PDF loading returns expected text and metadata structure
+#   - DOCX loading returns expected text and metadata structure
+#   - Heading detection correctly marks ## prefixes
+#   - Unsupported file types raise a clear error
+# Tests chunker.py:
+#   - Heading-based chunking splits on correct boundaries
+#   - Paragraph fallback activates when no headings are detected
+#   - Fixed-size fallback activates when paragraphs exceed CHUNK_SIZE
+#   - All chunks carry required metadata fields
+# Tests embedder.py:
+#   - Chunks are stored with correct metadata in ChromaDB
+#   - Duplicate ingestion of the same file does not create duplicate chunks
+#   - Collection is correctly scoped by user_id

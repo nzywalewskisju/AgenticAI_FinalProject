@@ -1,0 +1,10 @@
+// logs/audit_log.jsonl
+// Append-only audit log. One JSON object per line (JSONL format).
+// Written by write_audit_log() in tools/governance.py after every answered query.
+// Never edited, truncated, or deleted — append only.
+// Each entry contains:
+//   session_id, user_id, timestamp, query, route, escalated,
+//   chunks_used (list of source_file + section for every chunk),
+//   situation_facts, final_answer, grounding_score, compliance_passed
+// This file is the complete paper trail for every answer the system has ever given.
+// Do not commit to git — logs/ is in .gitignore.

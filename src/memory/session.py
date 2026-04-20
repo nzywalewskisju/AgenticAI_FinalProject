@@ -1,8 +1,8 @@
-# session.py
-# manages conversation history so follow-up questions have context
-# responsibilities:
-#   - store each conversation turn (user query + agent answer) by session/user ID
-#   - retrieve the last N turns to include in the orchestrator's context
-#   - clear session history when a conversation ends
-# keep this simple for now — store history in memory as a list of dicts
-# later improvement: persist to a file or database so history survives restarts
+# src/memory/session.py
+# Short-term conversation memory — resets when the session ends.
+# Stores the last N turns of dialogue (default 10) so the Reasoning Agent
+# can understand follow-up questions without the user repeating context.
+# Example: user asks "what about part-time employees?" — session memory provides
+#   the prior question so the agent knows what "what about" refers to.
+# Keyed by session_id. In-memory only — not persisted to disk.
+# SessionMemory class + global session_memory instance used by the orchestrator.

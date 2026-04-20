@@ -1,7 +1,10 @@
-# chunker.py
-# responsible for splitting raw document text into chunks that get stored in the vector DB
-# do NOT use fixed token size chunking — chunk by document structure instead:
-#   - split on section headers, numbered clauses, or double newlines
-#   - each chunk should represent one complete idea or policy section
-# each chunk must include metadata: source filename, document type, section header, effective date
-# output: list of dicts, each containing chunk text and its metadata
+# src/ingestion/chunker.py
+# Responsible for splitting loaded documents into chunks for embedding.
+# Uses a hybrid chunking strategy in this order:
+#   1. Heading/section detection — splits on ## markers and numbered section headers
+#   2. Paragraph fallback — splits on double newlines if no headings found
+#   3. Fixed-size fallback — uses RecursiveCharacterTextSplitter if paragraphs are too large
+# Each chunk carries metadata: source_file, file_type, document_name,
+#   section_header, chunk_index, user_id
+# Chunk size and overlap are set in config.py (CHUNK_SIZE, CHUNK_OVERLAP).
+# Never called directly by agents — called by the ingestion pipeline only.

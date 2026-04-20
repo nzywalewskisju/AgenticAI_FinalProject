@@ -1,10 +1,19 @@
-# test_tools.py
-# tests for every tool in src/tools/ — test each function in isolation before agents use them
-# what to test:
-#   - retrieve_chunks returns results for a known query
-#   - retrieve_chunks returns empty for a query below the similarity threshold
-#   - keyword_search returns results for an exact policy name
-#   - check_document_exists returns True for a topic that exists, False for one that does not
-#   - detect_pii flags text containing a social security number or full name
-#   - get_current_date returns a valid date
-# run with: python -m pytest tests/test_tools.py
+# tests/test_tools.py
+# Unit tests for all tools in isolation.
+# Ollama and ChromaDB are mocked — these tests do not require a running Ollama instance.
+# Tests retrieval.py:
+#   - retrieve_chunks returns results above SIMILARITY_THRESHOLD only
+#   - keyword_search returns results containing exact query terms
+#   - rerank_results correctly sorts chunks by Llama-assigned score
+# Tests document.py:
+#   - check_policy_coverage returns True when relevant content exists
+#   - check_policy_coverage returns False when collection is empty or off-topic
+#   - registry functions correctly read, write, and delete from JSON
+# Tests governance.py:
+#   - detect_pii flags queries containing another employee's sensitive information
+#   - assess_escalation_risk returns float between 0 and 1
+#   - compliance_stamp flags absolute statements correctly
+#   - write_audit_log appends valid JSON to audit_log.jsonl
+# Tests utils.py:
+#   - clean_llm_json_response strips code fences correctly
+#   - truncate_text does not exceed max_tokens

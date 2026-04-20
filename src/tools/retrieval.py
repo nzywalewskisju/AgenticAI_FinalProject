@@ -1,8 +1,13 @@
-# retrieval.py
-# contains all tools related to searching the vector database
-# tools defined here:
-#   - retrieve_chunks(query, filters): dense vector similarity search, returns top-k chunks
-#   - keyword_search(term): sparse BM25 keyword search for exact policy names or numbers
-#   - rerank_results(query, chunks): re-scores retrieved chunks for true relevance before use
-# these are called by the Reasoning Sub-Agent during the ReAct loop
-# similarity scores below SIMILARITY_THRESHOLD (set in config.py) should return empty
+# src/tools/retrieval.py
+# Retrieval tools owned by the Reasoning Sub-Agent.
+# Functions:
+#   retrieve_chunks(query, user_id, top_k)
+#     — dense vector semantic search against the user's ChromaDB collection
+#     — filters results by SIMILARITY_THRESHOLD before returning
+#   keyword_search(query, user_id, top_k)
+#     — sparse BM25 keyword search for exact term matching
+#     — complements semantic search for policy-specific terminology
+#   rerank_results(query, chunks)
+#     — re-scores retrieved chunks for true relevance using a second Llama call
+#     — each chunk is scored 0-10, results sorted descending, low scorers dropped
+# Never called directly — always called through the ReAct loop in reasoning.py.

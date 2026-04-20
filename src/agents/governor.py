@@ -1,10 +1,13 @@
-# governor.py — AGENT layer
-# the Governance Sub-Agent — called twice per query: before and after reasoning
-# pre-check (called by orchestrator before reasoning):
-#   - runs detect_pii on the incoming query
-#   - runs assess_escalation_risk to decide if a human HR rep should handle this instead
-#   - blocks the pipeline and escalates if risk is too high
-# post-check (called after review sub-agent approves the answer):
-#   - runs compliance_stamp on the final answer
-#   - runs write_audit_log to record the full interaction
-# note: this is the agent that decides when to call the tools in src/tools/governance.py
+# src/agents/governor.py
+# Governor Sub-Agent — runs twice per query: pre-check and post-check.
+# Calls tools from tools/governance.py only.
+# Pre-check (before Reasoning):
+#   - detect_pii: block queries containing another employee's private information
+#   - assess_escalation_risk: score 0-1, escalate to human HR if >= ESCALATION_THRESHOLD
+#   - high-stakes topics (harassment, discrimination, termination, FMLA, retaliation,
+#     medical accommodation, whistleblower) always escalate regardless of score
+# Post-check (after Review passes):
+#   - compliance_stamp: flag legally dangerous absolute statements in the final answer
+#   - write_audit_log: append full interaction record to logs/audit_log.jsonl
+# If pre-check blocks the query, no other agents are called.
+# Audit logging is non-negotiable — runs after every answered query without exception.

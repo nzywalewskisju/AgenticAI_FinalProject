@@ -1,4 +1,8 @@
 # config.py
+# Central configuration file for the HR Policy Assistant.
+# All settings, thresholds, model names, and paths are defined here.
+# Never hardcode these values in any other file — always import from config.
+# To tune the system, edit this file only.
 
 # Model settings
 LLM_MODEL = "llama3"

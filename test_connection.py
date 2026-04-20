@@ -1,10 +1,13 @@
 # test_connection.py
-# run this file first before building anything to confirm all systems work
-# tests three things independently:
-#   1. ollama LLM connection (llama3 responds to a prompt)
-#   2. ollama embedding model (nomic-embed-text returns a vector)
-#   3. chromadb (can store and query a document)
-# if all three pass, your environment is ready to build
+# Run this before anything else to verify the environment is correctly set up.
+# Checks:
+#   - Ollama is running and reachable at OLLAMA_BASE_URL
+#   - LLM_MODEL (llama3) is available in Ollama
+#   - EMBEDDING_MODEL (nomic-embed-text) is available in Ollama
+#   - ChromaDB can be initialized at CHROMA_DB_PATH
+#   - All required Python packages are importable
+#   - data/, logs/, db/ directories exist and are writable
+# Exit code 0 means everything is ready. Any failure prints a clear error message.
 
 import ollama
 import chromadb

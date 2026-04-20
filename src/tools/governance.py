@@ -1,9 +1,18 @@
-# governance.py — TOOLS layer (not the agent)
-# low-level functions that the Governance Sub-Agent calls
-# functions defined here:
-#   - detect_pii(text): scans input for names, SSNs, or other employee private info
-#   - assess_escalation_risk(query): scores whether a query needs a human HR rep
-#   - write_audit_log(query, chunks_used, answer, agent_trace): logs full interaction to file
-#   - compliance_stamp(answer): checks final answer for legally dangerous language
-# note: this is different from src/agents/governance.py which is the reasoning agent
-#       this file is just the raw functions — the agent is what decides when to call them
+# src/tools/governance.py
+# Governance tools owned by the Governor Sub-Agent (agents/governor.py).
+# Functions:
+#   detect_pii(query)
+#     — scans the user's query for another employee's private information
+#     — flags names + sensitive context, social security numbers, medical details
+#       that refer to someone other than the querying user
+#   assess_escalation_risk(query, user_id)
+#     — scores the query 0.0 to 1.0 for escalation risk
+#     — scores >= ESCALATION_THRESHOLD route to human HR instead of the agent
+#   compliance_stamp(answer)
+#     — scans the final answer for legally dangerous absolute statements
+#     — flags language like "you are entitled to" or "the company must"
+#     — returns passed: True/False and a list of flagged phrases
+#   write_audit_log(session_id, user_id, query, route, chunks_used,
+#                   final_answer, grounding_score, compliance_passed)
+#     — appends a full interaction record to logs/audit_log.jsonl
+#     — called after every answered query, non-negotiable
