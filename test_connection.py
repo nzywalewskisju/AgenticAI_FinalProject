@@ -16,16 +16,25 @@ import os
 def check_packages():
     print("Checking required packages...")
     required = [
-        "ollama", "chromadb", "bcrypt", "requests",
-        "pydantic", "dotenv", "langchain", "langchain_community",
-        "langchain_text_splitters", "rank_bm25", "docx", "pypdf"
+        ("ollama", "ollama"),
+        ("chromadb", "chromadb"),
+        ("bcrypt", "bcrypt"),
+        ("requests", "requests"),
+        ("pydantic", "pydantic"),
+        ("dotenv", "python-dotenv"),
+        ("langchain", "langchain"),
+        ("langchain_community", "langchain-community"),
+        ("langchain_text_splitters", "langchain-text-splitters"),
+        ("rank_bm25", "rank-bm25"),
+        ("docx", "python-docx"),
+        ("pypdf", "pypdf")
     ]
     missing = []
-    for package in required:
+    for import_name, package_name in required:
         try:
-            __import__(package)
+            __import__(import_name)
         except ImportError:
-            missing.append(package)
+            missing.append(package_name)
     if missing:
         print(f"  ✗ Missing packages: {', '.join(missing)}")
         print("  Run: pip install -r requirements.txt")
@@ -94,21 +103,19 @@ def check_chromadb():
     from config import CHROMA_DB_PATH
     try:
         client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
-        collection = client.get_or_create_collection("_connection_test")
+        collection = client.get_or_create_collection("connection-test")
         collection.add(
             documents=["This is a test document."],
-            ids=["_test_1"]
+            ids=["test1"]
         )
         results = collection.query(query_texts=["test"], n_results=1)
         assert results["documents"][0][0] == "This is a test document."
-        # Clean up — delete the test collection so it doesn't persist
-        client.delete_collection("_connection_test")
+        client.delete_collection("connection-test")
         print(f"  ✓ ChromaDB read/write at {CHROMA_DB_PATH}")
         return True
     except Exception as e:
         print(f"  ✗ ChromaDB failed: {e}")
         return False
-
 
 def main():
     print("\n=== HR Policy Assistant — Connection Test ===\n")
