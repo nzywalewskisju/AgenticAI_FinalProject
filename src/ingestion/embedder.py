@@ -7,3 +7,118 @@
 # Uses deterministic chunk IDs (source_file + chunk_index) to prevent
 #   duplicate ingestion if the same file is uploaded again.
 # Collection uses cosine similarity space (hnsw:space: cosine).
+
+import requests
+import chromadb
+from config import (
+    CHROMA_DB_PATH, COLLECTION_NAME,
+    EMBEDDING_MODEL, OLLAMA_BASE_URL
+)
+
+
+def _get_collection(user_id: str):
+    """
+    Returns the ChromaDB collection scoped to this user.
+    Creates it if it does not exist.
+    """
+    client = chromadb.PersistentClient(path=f"{CHROMA_DB_PATH}/{user_id}")
+    collection = client.get_or_create_collection(
+        name=f"{COLLECTION_NAME}_{user_id}",
+        metadata={"hnsw:space": "cosine"}
+    )
+    return collection
+
+
+def _embed_text(text: str) -> list[float]:
+    """
+    Embeds a single text string using Ollama's nomic-embed-text model.
+    """
+    response = requests.post(
+        f"{OLLAMA_BASE_URL}/api/embeddings",
+        json={"model": EMBEDDING_MODEL, "prompt": text}
+    )
+    response.raise_for_status()
+    return response.json()["embedding"]
+
+
+def _make_chunk_id(metadata: dict) -> str:
+    """
+    Creates a deterministic chunk ID from source_file and chunk_index.
+    Prevents duplicate ingestion if the same file is uploaded again.
+    """
+    source = metadata.get("source_file", "unknown")
+    index = metadata.get("chunk_index", 0)
+    return f"{source}__chunk_{index}"
+
+
+def embed_and_store(chunks: list[dict], user_id: str) -> int:
+    """
+    Embeds all chunks and stores them in the user's ChromaDB collection.
+    Skips chunks whose ID already exists in the collection.
+    Returns the number of new chunks stored.
+    """
+    collection = _get_collection(user_id)
+    stored_count = 0
+
+    for chunk in chunks:
+        chunk_id = _make_chunk_id(chunk["metadata"])
+
+        # Check for existing chunk — skip if already ingested
+        existing = collection.get(ids=[chunk_id])
+        if existing and existing.get("ids"):
+            print(f"[EMBEDDER] Skipping duplicate chunk: {chunk_id}")
+            continue
+
+        try:
+            embedding = _embed_text(chunk["text"])
+            collection.add(
+                ids=[chunk_id],
+                embeddings=[embedding],
+                documents=[chunk["text"]],
+                metadatas=[chunk["metadata"]]
+            )
+            stored_count += 1
+        except Exception as e:
+            print(f"[EMBEDDER] Warning: failed to embed chunk {chunk_id}: {e}")
+
+    print(f"[EMBEDDER] Stored {stored_count} new chunks for user {user_id}")
+    return stored_count
+
+
+def run_ingestion_pipeline(
+    file_paths: list[str],
+    user_id: str
+) -> dict:
+    """
+    Full ingestion pipeline — loads, chunks, embeds, and stores documents.
+    Called inline when a user uploads new files.
+    Returns {files_processed, chunks_stored, skipped_files}
+    """
+    from src.ingestion.loader import load_all_documents
+    from src.ingestion.chunker import chunk_all_documents
+    from src.tools.document import add_to_registry
+
+    print(f"[INGESTION] Starting pipeline for {len(file_paths)} file(s)...")
+
+    documents = load_all_documents(file_paths, user_id)
+    if not documents:
+        return {"files_processed": 0, "chunks_stored": 0, "skipped_files": file_paths}
+
+    chunks = chunk_all_documents(documents)
+    chunks_stored = embed_and_store(chunks, user_id)
+
+    # Register each successfully processed file
+    import os
+    processed_files = list({c["metadata"]["source_file"] for c in chunks})
+    for file_path in file_paths:
+        file_name = os.path.basename(file_path)
+        if file_name in processed_files:
+            file_chunks = [c for c in chunks if c["metadata"]["source_file"] == file_name]
+            add_to_registry(user_id, file_path, len(file_chunks))
+
+    print(f"[INGESTION] Complete. {chunks_stored} chunks stored.")
+    return {
+        "files_processed": len(documents),
+        "chunks_stored": chunks_stored,
+        "skipped_files": []
+    }

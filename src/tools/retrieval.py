@@ -11,6 +11,7 @@
 #     — re-scores retrieved chunks for true relevance using a second Llama call
 #     — each chunk is scored 0-10, results sorted descending, low scorers dropped
 # Never called directly — always called through the ReAct loop in reasoning.py.
+
 import requests
 from config import (
     CHROMA_DB_PATH, COLLECTION_NAME, EMBEDDING_MODEL,
