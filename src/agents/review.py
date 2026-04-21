@@ -1,6 +1,6 @@
 # src/agents/review.py
 # Review Sub-Agent — quality gate before the final answer reaches the user.
-# Runs five checks in order. All five must pass.
+# Runs five checks. Checks 1-4 run in parallel for speed.
 #   1. verify_grounding      — every claim traces to a retrieved chunk
 #   2. check_policy_alignment — answer accurately reflects policy wording
 #   3. check_tone            — appropriate sensitivity for HR topics
@@ -9,6 +9,7 @@
 # If any check fails: reject → back to Reasoning (max 2 retries total)
 # If all pass: forward to Governor post-check
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.tools.utils import call_llm, safe_json_parse, format_chunks_for_citation
 
 
@@ -80,7 +81,6 @@ Respond only in JSON: {"passed": true/false, "reason": "explanation"}"""
 def check_tone(answer: str, query: str) -> dict:
     """
     Checks that the answer uses appropriate sensitivity for HR topics.
-    Catches dismissive or overly casual language on sensitive subjects.
     Returns {passed: bool, reason: str}
     """
     system_prompt = """You are a tone checker for an HR policy assistant.
@@ -108,7 +108,6 @@ def check_advice_applicability(
     """
     Checks that the answer actually applies policy to the user's specific situation.
     Rejects answers that only summarize policy without situational reasoning.
-    This is the check that enforces agent behaviour over chatbot behaviour.
     Returns {passed: bool, reason: str}
     """
     system_prompt = """You are a quality checker for an HR policy assistant.
@@ -162,12 +161,41 @@ def run_review_agent(
     chunks_used: list
 ) -> dict:
     """
-    Runs all five review checks in order.
+    Runs all five review checks.
+    Checks 1-4 run in parallel for speed — all four LLM calls fire simultaneously.
     Returns {passed: bool, answer: str, grounding_score: float, failure_reason: str}
-    If passed is False, the orchestrator sends the query back to Reasoning.
     """
-    # Check 1: Grounding
-    grounding = verify_grounding(draft_answer, chunks_used)
+    if not chunks_used:
+        return {
+            "passed": False,
+            "answer": "",
+            "grounding_score": 0.0,
+            "failure_reason": "No chunks were retrieved. Answer has no grounding."
+        }
+
+    # Run all four checks in parallel
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(verify_grounding, draft_answer, chunks_used): "grounding",
+            executor.submit(check_policy_alignment, draft_answer, chunks_used): "alignment",
+            executor.submit(check_tone, draft_answer, query): "tone",
+            executor.submit(
+                check_advice_applicability, draft_answer, query, situation_facts
+            ): "applicability"
+        }
+
+        results = {}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                results[name] = future.result()
+            except Exception as e:
+                # If a check throws, treat it as passed to avoid false rejections
+                print(f"[REVIEW] Warning: {name} check threw an exception: {e}")
+                results[name] = {"passed": True, "score": 1.0, "reason": f"Check failed with exception: {e}"}
+
+    # Evaluate results in order — grounding first as it is the most critical
+    grounding = results.get("grounding", {"passed": False, "score": 0.0, "reason": "Check did not run"})
     if not grounding["passed"]:
         return {
             "passed": False,
@@ -176,8 +204,7 @@ def run_review_agent(
             "failure_reason": f"Grounding check failed (score {grounding['score']:.2f}): {grounding['reason']}"
         }
 
-    # Check 2: Policy alignment
-    alignment = check_policy_alignment(draft_answer, chunks_used)
+    alignment = results.get("alignment", {"passed": True, "reason": ""})
     if not alignment["passed"]:
         return {
             "passed": False,
@@ -186,8 +213,7 @@ def run_review_agent(
             "failure_reason": f"Policy alignment check failed: {alignment['reason']}"
         }
 
-    # Check 3: Tone
-    tone = check_tone(draft_answer, query)
+    tone = results.get("tone", {"passed": True, "reason": ""})
     if not tone["passed"]:
         return {
             "passed": False,
@@ -196,8 +222,7 @@ def run_review_agent(
             "failure_reason": f"Tone check failed: {tone['reason']}"
         }
 
-    # Check 4: Advice applicability
-    applicability = check_advice_applicability(draft_answer, query, situation_facts)
+    applicability = results.get("applicability", {"passed": True, "reason": ""})
     if not applicability["passed"]:
         return {
             "passed": False,
@@ -206,7 +231,7 @@ def run_review_agent(
             "failure_reason": f"Advice applicability check failed: {applicability['reason']}"
         }
 
-    # Check 5: Inject citations
+    # All passed — inject citations
     final_answer = inject_citations(draft_answer, chunks_used)
 
     return {

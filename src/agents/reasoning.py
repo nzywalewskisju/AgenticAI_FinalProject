@@ -16,11 +16,11 @@
 #   2. Retrieves policy relevant to those facts
 #   3. Reasons about the gap between the user's situation and policy requirements
 #   4. Produces concrete, personalized advice — not just a policy summary
-# Returns: {situation_facts, relevant_policy, advice, chunks_used, status, iterations}
+# Returns: {situation_facts, draft_answer, chunks_used, status, iterations}
 # Status: "success" | "clarification" | "no_info" | "error"
 
 import re
-from config import MAX_REACT_TURNS
+from config import MAX_REACT_TURNS, RERANK_SKIP_THRESHOLD
 from src.tools.utils import call_llm, format_chunks_for_prompt, get_current_date
 from src.tools.retrieval import retrieve_chunks, keyword_search, rerank_results
 from src.tools.document import check_policy_coverage
@@ -100,6 +100,10 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
     elif action == "rerank_results":
         if not chunks_used:
             return "No chunks to rerank. Retrieve chunks first."
+        # Skip reranking if top chunk is already highly confident
+        top_distance = chunks_used[0].get("distance", 1.0)
+        if top_distance < RERANK_SKIP_THRESHOLD:
+            return f"Top chunk is already highly relevant (distance {top_distance:.3f}). Skipping rerank."
         reranked = rerank_results(action_input, chunks_used)
         chunks_used.clear()
         chunks_used.extend(reranked)
@@ -127,7 +131,6 @@ def run_reasoning_agent(
     """
     chunks_used = []
 
-    # Build the initial prompt with all context
     context_block = ""
     if profile_context and "No profile" not in profile_context:
         context_block += f"\n\nUSER PROFILE:\n{profile_context}"
@@ -137,7 +140,8 @@ def run_reasoning_agent(
     initial_prompt = f"""USER QUERY: {query}
 {context_block}
 
-Begin by extracting the facts of the user's situation, then check policy coverage, then retrieve relevant policy, then reason about how the policy applies to their specific situation."""
+Begin by extracting the facts of the user's situation, then check policy coverage,
+then retrieve relevant policy, then reason about how the policy applies to their specific situation."""
 
     messages = [{"role": "user", "content": initial_prompt}]
 
@@ -147,7 +151,6 @@ Begin by extracting the facts of the user's situation, then check policy coverag
     while iterations < MAX_REACT_TURNS:
         iterations += 1
 
-        # Build full prompt from message history
         full_prompt = "\n\n".join(
             f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
             for m in messages
@@ -156,11 +159,9 @@ Begin by extracting the facts of the user's situation, then check policy coverag
         response = call_llm(full_prompt, system_prompt=REASONING_SYSTEM_PROMPT)
         messages.append({"role": "assistant", "content": response})
 
-        # Extract situation facts if present in first response
         if iterations == 1 and "situation" in response.lower():
             situation_facts = response.split("Action:")[0].strip()
 
-        # Check for clarification request
         if "CLARIFICATION_NEEDED:" in response:
             question = response.split("CLARIFICATION_NEEDED:")[-1].strip()
             return {
@@ -171,7 +172,6 @@ Begin by extracting the facts of the user's situation, then check policy coverag
                 "iterations": iterations
             }
 
-        # Check for final answer
         if "Answer:" in response:
             answer = response.split("Answer:")[-1].strip()
             return {
@@ -182,7 +182,6 @@ Begin by extracting the facts of the user's situation, then check policy coverag
                 "iterations": iterations
             }
 
-        # Parse and execute action
         action_match = ACTION_RE.search(response)
         if action_match:
             action = action_match.group(1)
@@ -190,13 +189,11 @@ Begin by extracting the facts of the user's situation, then check policy coverag
             observation = _execute_action(action, action_input, user_id, chunks_used)
             messages.append({"role": "user", "content": f"Observation: {observation}"})
         else:
-            # No action and no answer — nudge the agent
             messages.append({
                 "role": "user",
                 "content": "Continue. Use an Action or provide your final Answer."
             })
 
-    # Max turns reached without an answer
     return {
         "situation_facts": situation_facts,
         "draft_answer": "",

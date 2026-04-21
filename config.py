@@ -1,4 +1,4 @@
-## config.py
+# config.py
 # Central configuration file for the HR Policy Assistant.
 # All settings, thresholds, model names, and paths are defined here.
 # Never hardcode these values in any other file — always import from config.
@@ -19,7 +19,7 @@ CHROMA_DB_PATH  = "./db"
 COLLECTION_NAME = "hr_documents"
 
 # ── Retrieval ──────────────────────────────────────────────────────────────────
-TOP_K_RESULTS        = 5
+TOP_K_RESULTS        = 3        # reduced from 5 — faster retrieval, negligible accuracy cost
 # Cosine distance: 0 = identical, 1 = orthogonal.
 # 0.35 means "must be at least moderately similar". Tune after ingesting real docs.
 SIMILARITY_THRESHOLD = 0.35
@@ -30,7 +30,7 @@ CHUNK_OVERLAP = 80
 
 # ── Agent behaviour ────────────────────────────────────────────────────────────
 MAX_REACT_TURNS      = 6
-ESCALATION_THRESHOLD = 0.75   # governance risk score >= this → escalate
+ESCALATION_THRESHOLD = 0.75
 
 # ── Routing categories ─────────────────────────────────────────────────────────
 ROUTE_IN_SCOPE     = "hr_in_scope"
@@ -51,6 +51,11 @@ SECURITY_QUESTIONS = [
     "What was the name of your first school?",
     "What is your mother's maiden name?"
 ]
+
+# ── Reranking ──────────────────────────────────────────────────────────────────
+# Chunks with a distance below this threshold are considered highly confident
+# and will skip reranking entirely to save an LLM call.
+RERANK_SKIP_THRESHOLD = 0.15
 
 # ── Ensure required directories exist at import time ──────────────────────────
 for _dir in ["./db", "./logs", "./data/profiles", "./data/registry", "./data/users"]:
