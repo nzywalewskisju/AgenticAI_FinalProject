@@ -164,7 +164,7 @@ def run_orchestrator(
     reasoning_result = None
     failure_history = []
 
-    while retry_count <= MAX_REVIEW_RETRIES:
+    while retry_count < MAX_REVIEW_RETRIES:
         if retry_count == 0:
             step("Reasoning about your situation...")
         else:

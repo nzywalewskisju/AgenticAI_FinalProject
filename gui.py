@@ -55,7 +55,7 @@ def authenticate_user(username: str, password: str) -> dict | None:
 def create_user(username: str, password: str, security_question: str, security_answer: str) -> dict | None:
     users = _load_users()
     if any(u["username"].lower() == username.lower() for u in users):
-        return None  # Username taken
+        return None
     password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     answer_hash = bcrypt.hashpw(security_answer.strip().lower().encode(), bcrypt.gensalt()).decode()
     user = {
@@ -328,6 +328,7 @@ class MainWindow:
         self.username = user["username"]
         self.session_id = str(uuid.uuid4())
         self.selected_files = []
+        self._submitting = False
 
         self.root = tk.Tk()
         self.root.title(f"HR Policy Assistant — {self.username}")
@@ -365,13 +366,11 @@ class MainWindow:
         body = tk.Frame(self.root, bg=BG)
         body.pack(fill="both", expand=True)
 
-        # Left sidebar
         sidebar = tk.Frame(body, bg=BG_PANEL, width=260)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
         self._build_sidebar(sidebar)
 
-        # Right: chat area
         chat_area = tk.Frame(body, bg=BG)
         chat_area.pack(side="left", fill="both", expand=True)
         self._build_chat(chat_area)
@@ -483,54 +482,13 @@ class MainWindow:
             self._submit_query()
             return "break"
 
-    def _pick_files(self):
-        files = filedialog.askopenfilenames(
-            title="Select HR Policy Documents",
-            filetypes=[("Supported files", "*.pdf *.docx"), ("PDF", "*.pdf"), ("Word", "*.docx")]
-        )
-        if files:
-            self.selected_files = list(files)
-            names = [os.path.basename(f) for f in files]
-            display = ", ".join(names[:2])
-            if len(names) > 2:
-                display += f" (+{len(names) - 2} more)"
-            self.selected_label.config(text=display, fg=TEXT)
-            self.ingest_btn.config(state="normal")
-
-    def _run_ingestion(self):
-        if not self.selected_files:
-            return
-
-        self._set_status("● Ingesting...", WARNING)
-        self.ingest_btn.config(state="disabled")
-        self._append_chat("status", f"Ingesting {len(self.selected_files)} document(s)...\n")
-
-        def ingest_thread():
-            try:
-                from src.ingestion.embedder import run_ingestion_pipeline
-                result = run_ingestion_pipeline(self.selected_files, self.user_id)
-                self.root.after(0, lambda: self._on_ingestion_complete(result))
-            except Exception as e:
-                self.root.after(0, lambda: self._on_ingestion_error(str(e)))
-
-        threading.Thread(target=ingest_thread, daemon=True).start()
-
-    def _on_ingestion_complete(self, result):
-        self._set_status("● Ready", SUCCESS)
-        self._append_chat("status", f"✓ Ingested {result['chunks_stored']} chunks from {result['files_processed']} document(s).\n\n")
-        self.selected_files = []
-        self.selected_label.config(text="No files selected.", fg=TEXT_DIM)
-        self._refresh_documents()
-
-    def _on_ingestion_error(self, error: str):
-        self._set_status("● Error", ERROR)
-        self._append_chat("error", f"✗ Ingestion failed: {error}\n\n")
-        self.ingest_btn.config(state="normal")
-
     def _submit_query(self):
+        if self._submitting:
+            return
         query = self.query_input.get("1.0", "end").strip()
         if not query:
             return
+        self._submitting = True
         self.query_input.delete("1.0", "end")
         self._append_chat("user", f"You: {query}\n")
         self._set_status("● Thinking...", WARNING)
@@ -547,7 +505,6 @@ class MainWindow:
         self._stream_loading_steps()
 
     def _stream_loading_steps(self):
-        """Shows animated loading messages while the agent is working."""
         steps = [
             "Classifying your query...",
             "Checking policy coverage...",
@@ -588,11 +545,11 @@ class MainWindow:
             self._loading_tag_start = None
 
     def _on_query_complete(self, result: dict):
+        self._submitting = False
         self._cancel_loading()
         self._set_status("● Ready", SUCCESS)
 
         answer = result.get("answer", "No response.")
-        # Split citations from main answer for separate formatting
         if "---\n**Sources:**" in answer:
             parts = answer.split("---\n**Sources:**")
             self._append_chat("assistant", f"\n{parts[0].strip()}\n")
@@ -600,7 +557,6 @@ class MainWindow:
         else:
             self._append_chat("assistant", f"\n{answer}\n")
 
-        # New profile facts notification
         for fact in result.get("new_profile_facts", []):
             self._append_chat("fact", f"✓ Profile updated: {fact}\n")
 
@@ -608,9 +564,54 @@ class MainWindow:
         self._refresh_profile()
 
     def _on_query_error(self, error: str):
+        self._submitting = False
         self._cancel_loading()
         self._set_status("● Error", ERROR)
         self._append_chat("error", f"✗ Error: {error}\n\n")
+
+    def _pick_files(self):
+        files = filedialog.askopenfilenames(
+            title="Select HR Policy Documents",
+            filetypes=[("Supported files", "*.pdf *.docx"), ("PDF", "*.pdf"), ("Word", "*.docx")]
+        )
+        if files:
+            self.selected_files = list(files)
+            names = [os.path.basename(f) for f in files]
+            display = ", ".join(names[:2])
+            if len(names) > 2:
+                display += f" (+{len(names) - 2} more)"
+            self.selected_label.config(text=display, fg=TEXT)
+            self.ingest_btn.config(state="normal")
+
+    def _run_ingestion(self):
+        if not self.selected_files:
+            return
+        self._set_status("● Ingesting...", WARNING)
+        self.ingest_btn.config(state="disabled")
+        self._append_chat("status", f"Ingesting {len(self.selected_files)} document(s)...\n")
+
+        def ingest_thread():
+            try:
+                from src.ingestion.embedder import run_ingestion_pipeline
+                result = run_ingestion_pipeline(self.selected_files, self.user_id)
+                self.root.after(0, lambda: self._on_ingestion_complete(result))
+            except Exception as e:
+                self.root.after(0, lambda: self._on_ingestion_error(str(e)))
+
+        threading.Thread(target=ingest_thread, daemon=True).start()
+
+    def _on_ingestion_complete(self, result):
+        self._set_status("● Ready", SUCCESS)
+        self._append_chat("status", f"✓ Ingested {result['chunks_stored']} chunks from {result['files_processed']} document(s).\n\n")
+        self.selected_files = []
+        self.selected_label.config(text="No files selected.", fg=TEXT_DIM)
+        self.ingest_btn.config(state="disabled")
+        self._refresh_documents()
+
+    def _on_ingestion_error(self, error: str):
+        self._set_status("● Error", ERROR)
+        self._append_chat("error", f"✗ Ingestion failed: {error}\n\n")
+        self.ingest_btn.config(state="normal")
 
     def _clear_session(self):
         from src.memory.session import session_memory
