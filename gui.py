@@ -30,7 +30,10 @@ def _load_users() -> list:
     if not os.path.exists(USERS_FILE):
         return []
     with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        content = f.read().strip()
+        if not content:
+            return []
+        return json.loads(content)
 
 
 def _save_users(users: list) -> None:

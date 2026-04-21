@@ -15,6 +15,8 @@ from config import (
     EMBEDDING_MODEL, OLLAMA_BASE_URL
 )
 
+BATCH_SIZE = 32
+
 
 def _get_collection(user_id: str):
     """
@@ -32,6 +34,8 @@ def _get_collection(user_id: str):
 def _embed_text(text: str) -> list[float]:
     """
     Embeds a single text string using Ollama's nomic-embed-text model.
+    Used at retrieval time for query embedding — kept for compatibility
+    with retrieval.py and document.py which embed single queries.
     """
     response = requests.post(
         f"{OLLAMA_BASE_URL}/api/embeddings",
@@ -39,6 +43,20 @@ def _embed_text(text: str) -> list[float]:
     )
     response.raise_for_status()
     return response.json()["embedding"]
+
+
+def _embed_texts_batch(texts: list[str]) -> list[list[float]]:
+    """
+    Embeds multiple texts in a single Ollama API call.
+    Much faster than one call per chunk at ingestion time.
+    Uses the /api/embed endpoint which accepts a list of inputs.
+    """
+    response = requests.post(
+        f"{OLLAMA_BASE_URL}/api/embed",
+        json={"model": EMBEDDING_MODEL, "input": texts}
+    )
+    response.raise_for_status()
+    return response.json()["embeddings"]
 
 
 def _make_chunk_id(metadata: dict) -> str:
@@ -54,34 +72,50 @@ def _make_chunk_id(metadata: dict) -> str:
 def embed_and_store(chunks: list[dict], user_id: str) -> int:
     """
     Embeds all chunks and stores them in the user's ChromaDB collection.
+    Processes chunks in batches of BATCH_SIZE for significantly faster ingestion.
     Skips chunks whose ID already exists in the collection.
     Returns the number of new chunks stored.
     """
     collection = _get_collection(user_id)
     stored_count = 0
 
+    # Filter out duplicates first in one pass before any embedding occurs
+    new_chunks = []
     for chunk in chunks:
         chunk_id = _make_chunk_id(chunk["metadata"])
-
-        # Check for existing chunk — skip if already ingested
         existing = collection.get(ids=[chunk_id])
         if existing and existing.get("ids"):
             print(f"[EMBEDDER] Skipping duplicate chunk: {chunk_id}")
             continue
+        new_chunks.append(chunk)
+
+    if not new_chunks:
+        print(f"[EMBEDDER] All chunks already ingested. Nothing new to store.")
+        return 0
+
+    print(f"[EMBEDDER] Embedding {len(new_chunks)} new chunks in batches of {BATCH_SIZE}...")
+
+    # Process in batches
+    for i in range(0, len(new_chunks), BATCH_SIZE):
+        batch = new_chunks[i:i + BATCH_SIZE]
+        texts = [c["text"] for c in batch]
+        ids = [_make_chunk_id(c["metadata"]) for c in batch]
+        metadatas = [c["metadata"] for c in batch]
 
         try:
-            embedding = _embed_text(chunk["text"])
+            embeddings = _embed_texts_batch(texts)
             collection.add(
-                ids=[chunk_id],
-                embeddings=[embedding],
-                documents=[chunk["text"]],
-                metadatas=[chunk["metadata"]]
+                ids=ids,
+                embeddings=embeddings,
+                documents=texts,
+                metadatas=metadatas
             )
-            stored_count += 1
+            stored_count += len(batch)
+            print(f"[EMBEDDER] {stored_count}/{len(new_chunks)} chunks stored...", end="\r")
         except Exception as e:
-            print(f"[EMBEDDER] Warning: failed to embed chunk {chunk_id}: {e}")
+            print(f"[EMBEDDER] Warning: batch failed at index {i}: {e}")
 
-    print(f"[EMBEDDER] Stored {stored_count} new chunks for user {user_id}")
+    print(f"\n[EMBEDDER] Stored {stored_count} new chunks for user {user_id}")
     return stored_count
 
 
@@ -97,6 +131,7 @@ def run_ingestion_pipeline(
     from src.ingestion.loader import load_all_documents
     from src.ingestion.chunker import chunk_all_documents
     from src.tools.document import add_to_registry
+    import os
 
     print(f"[INGESTION] Starting pipeline for {len(file_paths)} file(s)...")
 
@@ -108,7 +143,6 @@ def run_ingestion_pipeline(
     chunks_stored = embed_and_store(chunks, user_id)
 
     # Register each successfully processed file
-    import os
     processed_files = list({c["metadata"]["source_file"] for c in chunks})
     for file_path in file_paths:
         file_name = os.path.basename(file_path)
