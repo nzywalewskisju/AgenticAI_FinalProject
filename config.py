@@ -19,10 +19,10 @@ CHROMA_DB_PATH  = "./db"
 COLLECTION_NAME = "hr_documents"
 
 # ── Retrieval ──────────────────────────────────────────────────────────────────
-TOP_K_RESULTS        = 3        # reduced from 5 — faster retrieval, negligible accuracy cost
+TOP_K_RESULTS = 5        # reduced from 5 — faster retrieval, negligible accuracy cost
 # Cosine distance: 0 = identical, 1 = orthogonal.
 # 0.35 means "must be at least moderately similar". Tune after ingesting real docs.
-SIMILARITY_THRESHOLD = 0.35
+SIMILARITY_THRESHOLD = 0.6
 
 # ── Ingestion ──────────────────────────────────────────────────────────────────
 CHUNK_SIZE    = 600

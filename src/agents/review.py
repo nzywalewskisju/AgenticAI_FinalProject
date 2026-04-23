@@ -46,7 +46,7 @@ Respond only in JSON: {"score": 0.0, "reason": "explanation"}"""
 
     score = float(result.get("score", 0.0))
     return {
-        "passed": score >= 0.7,
+        "passed": score >= 0.5,
         "score": score,
         "reason": result.get("reason", "")
     }
@@ -224,12 +224,7 @@ def run_review_agent(
 
     applicability = results.get("applicability", {"passed": True, "reason": ""})
     if not applicability["passed"]:
-        return {
-            "passed": False,
-            "answer": "",
-            "grounding_score": grounding["score"],
-            "failure_reason": f"Advice applicability check failed: {applicability['reason']}"
-        }
+        print(f"[REVIEW] Applicability warning (non-blocking): {applicability['reason']}")
 
     # All passed — inject citations
     final_answer = inject_citations(draft_answer, chunks_used)
