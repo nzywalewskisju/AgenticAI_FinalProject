@@ -30,5 +30,13 @@
     "security_question": "What is your mother's maiden name?",
     "security_answer_hash": "$2b$12$677P89aPcaXrfHGung.Pvu8LYjENMyrxLwqqfs1ktnxKE92l5f386",
     "created_at": "2026-04-23T17:34:54.601669"
+  },
+  {
+    "user_id": "c2fecc92-8195-47a6-9913-78824671c53e",
+    "username": "dennisj4",
+    "password_hash": "$2b$12$Bvp7uBOJUzfnIcMf33t/DOWPIbQM9cW6vsOi6vhNO7b2olBe7qbCy",
+    "security_question": "What is your mother's maiden name?",
+    "security_answer_hash": "$2b$12$GZ6p8OuBvWwk0duKCE6xwOZdhn6QmYt.cyxoKLG5cfPwIoL5cVZFW",
+    "created_at": "2026-04-23T18:12:24.865711"
   }
 ]
