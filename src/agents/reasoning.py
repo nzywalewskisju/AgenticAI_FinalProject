@@ -314,22 +314,40 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
         if action_match:
             action = action_match.group(1)
             action_input = action_match.group(2)
+
+            # If this is the last turn and we have chunks, force an Answer instead
+            if iterations >= MAX_REACT_TURNS - 1 and chunks_used:
+                print(f"[REASONING] Last turn reached with chunks available — forcing Answer")
+                force_prompt = (
+                    f"You have retrieved {len(chunks_used)} policy chunks. "
+                    f"This is your final turn. "
+                    f"You MUST now write your Answer using the chunks you have. "
+                    f"Do not call any more actions. "
+                    f"Write your Answer now."
+                )
+                messages.append({"role": "user", "content": force_prompt})
+
+                full_prompt = "\n\n".join(
+                    f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+                    for m in messages
+                )
+                final_response = call_llm(full_prompt, system_prompt=REASONING_SYSTEM_PROMPT)
+
+                if "Answer:" in final_response:
+                    answer = final_response.split("Answer:")[-1].strip()
+                    return {
+                        "situation_facts": situation_facts,
+                        "draft_answer": answer,
+                        "chunks_used": chunks_used,
+                        "status": "success",
+                        "iterations": iterations
+                    }
+
             observation = _execute_action(
                 action, action_input, user_id, chunks_used, retrieval_count
             )
             messages.append({"role": "user", "content": f"Observation: {observation}"})
-        else:
-            print(f"[REASONING] No action parsed. Raw response:\n{response[:300]}")
-            messages.append({
-                "role": "user",
-                "content": (
-                    "Your last response did not contain a valid Action. "
-                    "Remember: every Action must be on a single line like this:\n"
-                    "Action: tool_name: your input here\n"
-                    "Use an Action or provide your final Answer."
-                )
-            })
-
+            
     # Max turns reached without an answer
     print(f"[REASONING] Max turns reached without Answer — returning no_info")
     return {
