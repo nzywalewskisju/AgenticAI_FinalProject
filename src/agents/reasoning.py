@@ -37,6 +37,10 @@ You follow the ReAct pattern: Thought → Action → PAUSE → Observation → r
 RULES:
 - You MUST call check_policy_coverage before calling retrieve_chunks.
 - You MUST call retrieve_chunks or keyword_search on EVERY query — no exceptions.
+- You should retrieve chunks NO MORE THAN TWICE per query.
+- After two retrievals, you MUST produce your Answer using what you have.
+- Do NOT retrieve the same query twice — if retrieve_chunks returns no new chunks, move on.
+- Do NOT call retrieve_chunks more than once on the same or similar topic.
 - You MUST NOT produce an Answer until you have retrieved at least one chunk.
 - You MUST extract the facts of the user's situation before retrieving anything.
 - You MUST apply retrieved policy to the user's specific facts — not just quote the policy.
@@ -87,15 +91,22 @@ Your answer must include:
 4. Any deadlines, notice requirements, or steps they need to take"""
 
 
-def _execute_action(action: str, action_input: str, user_id: str, chunks_used: list) -> str:
+def _execute_action(
+    action: str,
+    action_input: str,
+    user_id: str,
+    chunks_used: list,
+    retrieval_count: list
+) -> str:
     """
     Executes a named action and returns the observation string.
     Updates chunks_used in place when retrieval actions return chunks.
     Uses text-based deduplication to prevent the same chunk being added multiple times.
+    retrieval_count is a single-element list used as a mutable counter.
     """
     action = action.strip().lower()
 
-    # Sanitize query — strip quotes, boolean operators, and underscores the model may have added
+    # Sanitize query — strip quotes, boolean operators, and underscores
     action_input = (
         action_input.strip()
         .replace("_", " ")
@@ -115,13 +126,21 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
         return f"Policy coverage check: {result['reason']} Covered: {result['covered']}"
 
     elif action == "retrieve_chunks":
+        if retrieval_count[0] >= 2:
+            return (
+                "Maximum retrievals reached. "
+                "You have already retrieved chunks twice. "
+                "You MUST now produce your Answer using the chunks you already have. "
+                "Do not call retrieve_chunks or keyword_search again."
+            )
+        retrieval_count[0] += 1
         chunks = retrieve_chunks(action_input, user_id)
-        print(f"[REASONING] Retrieved {len(chunks)} chunks")
+        print(f"[REASONING] Retrieved {len(chunks)} chunks (retrieval {retrieval_count[0]}/2)")
         if not chunks:
             return (
                 "No relevant chunks found for this query. "
                 "Try keyword_search with different plain terms, "
-                "or try retrieve_chunks with a simpler, shorter query."
+                "or produce your Answer using what you already have."
             )
         existing_texts = {c["text"] for c in chunks_used}
         new_count = 0
@@ -133,12 +152,20 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
         return f"Retrieved {len(chunks)} chunks ({new_count} new):\n\n{format_chunks_for_prompt(chunks)}"
 
     elif action == "keyword_search":
+        if retrieval_count[0] >= 2:
+            return (
+                "Maximum retrievals reached. "
+                "You MUST now produce your Answer using the chunks you already have. "
+                "Do not call retrieve_chunks or keyword_search again."
+            )
+        retrieval_count[0] += 1
         chunks = keyword_search(action_input, user_id)
-        print(f"[REASONING] Keyword search returned {len(chunks)} chunks")
+        print(f"[REASONING] Keyword search returned {len(chunks)} chunks (retrieval {retrieval_count[0]}/2)")
         if not chunks:
             return (
                 "No results found for keyword search. "
-                "Try retrieve_chunks with a plain natural language query instead."
+                "Try retrieve_chunks with a plain natural language query instead, "
+                "or produce your Answer using what you already have."
             )
         existing_texts = {c["text"] for c in chunks_used}
         new_count = 0
@@ -186,12 +213,14 @@ def run_reasoning_agent(
 ) -> dict:
     """
     Runs the ReAct loop for the given query.
+    Retrieval is capped at 2 calls total to prevent excessive chunk accumulation.
     Accepts prior_chunks from previous attempts so the agent does not
     start from zero on retries.
     Returns {situation_facts, draft_answer, chunks_used, status, iterations}
     """
     print(f"[REASONING] Starting ReAct loop for user: {user_id}")
     chunks_used = list(prior_chunks) if prior_chunks else []
+    retrieval_count = [0]  # mutable counter passed to _execute_action
 
     context_block = ""
     if profile_context and "No profile" not in profile_context:
@@ -199,17 +228,22 @@ def run_reasoning_agent(
     if session_context and "No prior" not in session_context:
         context_block += f"\n\nPRIOR CONVERSATION:\n{session_context}"
 
-    # Tell the agent about prior chunks if any exist
+    # Tell the agent about prior chunks if any exist from a previous attempt
     prior_context = ""
     if chunks_used:
-        prior_context = f"\n\nNOTE: {len(chunks_used)} policy chunks were already retrieved in a previous attempt. You may proceed directly to reasoning about the user's situation using those chunks, or retrieve additional chunks if needed."
+        prior_context = (
+            f"\n\nNOTE: {len(chunks_used)} policy chunks were already retrieved in a previous attempt. "
+            f"You may proceed directly to reasoning about the user's situation using those chunks, "
+            f"or retrieve additional chunks if needed. Your retrieval limit is still 2 total."
+        )
 
     initial_prompt = f"""USER QUERY: {query}
 {context_block}{prior_context}
 
 Begin by extracting the facts of the user's situation, then check policy coverage,
 then retrieve relevant policy, then reason about how the policy applies to their specific situation.
-You MUST retrieve policy chunks before providing any Answer unless prior chunks are already provided above."""
+You MUST retrieve policy chunks before providing any Answer unless prior chunks are already provided above.
+Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answer."""
 
     messages = [{"role": "user", "content": initial_prompt}]
 
@@ -280,7 +314,9 @@ You MUST retrieve policy chunks before providing any Answer unless prior chunks 
         if action_match:
             action = action_match.group(1)
             action_input = action_match.group(2)
-            observation = _execute_action(action, action_input, user_id, chunks_used)
+            observation = _execute_action(
+                action, action_input, user_id, chunks_used, retrieval_count
+            )
             messages.append({"role": "user", "content": f"Observation: {observation}"})
         else:
             print(f"[REASONING] No action parsed. Raw response:\n{response[:300]}")
@@ -295,6 +331,7 @@ You MUST retrieve policy chunks before providing any Answer unless prior chunks 
             })
 
     # Max turns reached without an answer
+    print(f"[REASONING] Max turns reached without Answer — returning no_info")
     return {
         "situation_facts": situation_facts,
         "draft_answer": "",
@@ -302,4 +339,3 @@ You MUST retrieve policy chunks before providing any Answer unless prior chunks 
         "status": "no_info",
         "iterations": iterations
     }
-# new end of file
