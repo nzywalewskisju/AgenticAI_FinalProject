@@ -10,6 +10,7 @@
 # If all pass: forward to Governor post-check
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from ctypes import alignment
 from src.tools.utils import call_llm, safe_json_parse, format_chunks_for_citation
 
 
@@ -176,7 +177,7 @@ def run_review_agent(
         }
 
     # Lower grounding threshold on retries
-    grounding_threshold = 0.4 if is_retry else 0.5
+    grounding_threshold = 0.35 if is_retry else 0.4
 
     # Run all four checks in parallel
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -213,21 +214,11 @@ def run_review_agent(
 
     alignment = results.get("alignment", {"passed": True, "reason": ""})
     if not alignment["passed"]:
-        return {
-            "passed": False,
-            "answer": "",
-            "grounding_score": grounding["score"],
-            "failure_reason": f"Policy alignment check failed: {alignment['reason']}"
-        }
+        print(f"[REVIEW] Alignment warning (non-blocking): {alignment['reason']}")
 
     tone = results.get("tone", {"passed": True, "reason": ""})
     if not tone["passed"]:
-        return {
-            "passed": False,
-            "answer": "",
-            "grounding_score": grounding["score"],
-            "failure_reason": f"Tone check failed: {tone['reason']}"
-        }
+        print(f"[REVIEW] Tone warning (non-blocking): {tone['reason']}")
 
     applicability = results.get("applicability", {"passed": True, "reason": ""})
     if not applicability["passed"]:

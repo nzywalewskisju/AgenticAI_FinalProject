@@ -91,13 +91,14 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
     """
     Executes a named action and returns the observation string.
     Updates chunks_used in place when retrieval actions return chunks.
+    Uses text-based deduplication to prevent the same chunk being added multiple times.
     """
     action = action.strip().lower()
 
-    # Sanitize query — strip quotes and boolean operators the model may have added
+    # Sanitize query — strip quotes, boolean operators, and underscores the model may have added
     action_input = (
         action_input.strip()
-        .replace("_", " ") 
+        .replace("_", " ")
         .replace(" AND ", " ")
         .replace(" OR ", " ")
         .replace(" NOT ", " ")
@@ -122,10 +123,14 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
                 "Try keyword_search with different plain terms, "
                 "or try retrieve_chunks with a simpler, shorter query."
             )
+        existing_texts = {c["text"] for c in chunks_used}
+        new_count = 0
         for c in chunks:
-            if c not in chunks_used:
+            if c["text"] not in existing_texts:
                 chunks_used.append(c)
-        return f"Retrieved {len(chunks)} chunks:\n\n{format_chunks_for_prompt(chunks)}"
+                existing_texts.add(c["text"])
+                new_count += 1
+        return f"Retrieved {len(chunks)} chunks ({new_count} new):\n\n{format_chunks_for_prompt(chunks)}"
 
     elif action == "keyword_search":
         chunks = keyword_search(action_input, user_id)
@@ -135,10 +140,14 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
                 "No results found for keyword search. "
                 "Try retrieve_chunks with a plain natural language query instead."
             )
+        existing_texts = {c["text"] for c in chunks_used}
+        new_count = 0
         for c in chunks:
-            if c not in chunks_used:
+            if c["text"] not in existing_texts:
                 chunks_used.append(c)
-        return f"Keyword search returned {len(chunks)} chunks:\n\n{format_chunks_for_prompt(chunks)}"
+                existing_texts.add(c["text"])
+                new_count += 1
+        return f"Keyword search returned {len(chunks)} chunks ({new_count} new):\n\n{format_chunks_for_prompt(chunks)}"
 
     elif action == "rerank_results":
         if not chunks_used:
@@ -160,8 +169,11 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
     else:
         return (
             f"Unknown action: {action}. "
+            f"You have used all available tools. "
             f"Available actions: check_policy_coverage, retrieve_chunks, "
-            f"keyword_search, rerank_results, get_current_date, request_clarification."
+            f"keyword_search, rerank_results, get_current_date, request_clarification. "
+            f"If you have enough information from the retrieved chunks, provide your Answer now. "
+            f"Do not invent new actions."
         )
 
 
