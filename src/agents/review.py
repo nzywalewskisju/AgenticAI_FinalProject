@@ -14,11 +14,11 @@ from ctypes import alignment
 from src.tools.utils import call_llm, safe_json_parse, format_chunks_for_citation
 
 
-def verify_grounding(answer: str, chunks_used: list, threshold: float = 0.5) -> dict:
+def verify_grounding(answer: str, chunks_used: list, threshold: float = 0.4) -> dict:
     """
     Checks that every factual claim in the answer traces to a retrieved chunk.
     Returns {passed: bool, score: float, reason: str}
-    Threshold is lowered on retries to avoid infinite rejection loops.
+    Default threshold is 0.4. Lowered to 0.3 on retries.
     """
     if not chunks_used:
         return {
@@ -163,9 +163,9 @@ def run_review_agent(
     is_retry: bool = False
 ) -> dict:
     """
-    Runs all five review checks.
-    Checks 1-4 run in parallel for speed.
-    Uses a lower grounding threshold on retries to avoid infinite rejection loops.
+    Runs all review checks.
+    Only grounding is a hard block — all other checks are non-blocking warnings.
+    Grounding threshold is lower on retries to avoid infinite rejection loops.
     Returns {passed: bool, answer: str, grounding_score: float, failure_reason: str}
     """
     if not chunks_used:
@@ -177,7 +177,7 @@ def run_review_agent(
         }
 
     # Lower grounding threshold on retries
-    grounding_threshold = 0.35 if is_retry else 0.4
+    grounding_threshold = 0.3 if is_retry else 0.4
 
     # Run all four checks in parallel
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -198,11 +198,12 @@ def run_review_agent(
             except Exception as e:
                 print(f"[REVIEW] Warning: {name} check threw an exception: {e}")
                 results[name] = {"passed": True, "score": 1.0, "reason": f"Check failed with exception: {e}"}
-        
-        for name, result in results.items():
-            print(f"[REVIEW] {name}: passed={result.get('passed')} score={result.get('score', 'N/A')} reason={result.get('reason', '')[:120]}")
 
-    # Evaluate results in order
+    # Debug — show all check results
+    for name, result in results.items():
+        print(f"[REVIEW] {name}: passed={result.get('passed')} score={result.get('score', 'N/A')} reason={result.get('reason', '')[:120]}")
+
+    # Grounding is the only hard block
     grounding = results.get("grounding", {"passed": False, "score": 0.0, "reason": "Check did not run"})
     if not grounding["passed"]:
         return {
@@ -212,6 +213,7 @@ def run_review_agent(
             "failure_reason": f"Grounding check failed (score {grounding['score']:.2f}): {grounding['reason']}"
         }
 
+    # All other checks are non-blocking warnings
     alignment = results.get("alignment", {"passed": True, "reason": ""})
     if not alignment["passed"]:
         print(f"[REVIEW] Alignment warning (non-blocking): {alignment['reason']}")
@@ -233,4 +235,3 @@ def run_review_agent(
         "grounding_score": grounding["score"],
         "failure_reason": ""
     }
-# end of file

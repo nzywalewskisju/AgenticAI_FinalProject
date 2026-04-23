@@ -147,7 +147,7 @@ def run_orchestrator(
     session_context = session_memory.get_context_string(session_id)
     profile_context = get_profile_context_string(user_id)
 
-    # ── Step 7: Reasoning + Review loop (max 2 retries) ───────────────────────
+    # ── Step 7: Reasoning + Review loop ───────────────────────────────────────
     retry_count = 0
     review_result = None
     reasoning_result = None
@@ -181,7 +181,7 @@ def run_orchestrator(
         print(f"[ORCHESTRATOR] Chunks used: {len(reasoning_result['chunks_used'])}")
         print(f"[ORCHESTRATOR] Iterations: {reasoning_result['iterations']}")
 
-        # Handle clarification
+        # Guard 1 — handle clarification
         if reasoning_result["status"] == "clarification":
             return {
                 "answer": reasoning_result["draft_answer"],
@@ -193,9 +193,31 @@ def run_orchestrator(
                 "loading_steps": loading_steps
             }
 
-        # No-chunks guard
+        # Guard 2 — handle no_info (max turns reached without answer)
+        if reasoning_result["status"] == "no_info":
+            failure_history.append(
+                "Reasoning agent reached max turns without producing an answer. "
+                "Try retrieving different chunks and producing a complete Answer."
+            )
+            retry_count += 1
+            continue
+
+        # Guard 3 — no chunks retrieved
         if not all_chunks_accumulated:
-            failure_history.append("No policy chunks were retrieved. You must retrieve relevant chunks before answering.")
+            failure_history.append(
+                "No policy chunks were retrieved. "
+                "You must retrieve relevant chunks before answering."
+            )
+            retry_count += 1
+            continue
+
+        # Guard 4 — empty draft answer
+        if not reasoning_result.get("draft_answer", "").strip():
+            print(f"[ORCHESTRATOR] Warning: draft_answer is empty — skipping review")
+            failure_history.append(
+                "Draft answer was empty. "
+                "You must produce a complete Answer statement before finishing."
+            )
             retry_count += 1
             continue
 
