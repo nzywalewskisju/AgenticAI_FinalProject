@@ -197,6 +197,9 @@ def run_review_agent(
             except Exception as e:
                 print(f"[REVIEW] Warning: {name} check threw an exception: {e}")
                 results[name] = {"passed": True, "score": 1.0, "reason": f"Check failed with exception: {e}"}
+        
+        for name, result in results.items():
+            print(f"[REVIEW] {name}: passed={result.get('passed')} score={result.get('score', 'N/A')} reason={result.get('reason', '')[:120]}")
 
     # Evaluate results in order
     grounding = results.get("grounding", {"passed": False, "score": 0.0, "reason": "Check did not run"})
