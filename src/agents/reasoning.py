@@ -186,6 +186,7 @@ You MUST retrieve policy chunks before providing any Answer."""
 
     iterations = 0
     situation_facts = ""
+    blocked_answer_count = 0
 
     while iterations < MAX_REACT_TURNS:
         iterations += 1
@@ -215,7 +216,17 @@ You MUST retrieve policy chunks before providing any Answer."""
         # Check for final answer — but only allow if chunks have been retrieved
         if "Answer:" in response:
             if not chunks_used:
-                print(f"[REASONING] Agent tried to answer without retrieving chunks — forcing retrieval")
+                blocked_answer_count += 1
+                print(f"[REASONING] Agent tried to answer without retrieving chunks — forcing retrieval (attempt {blocked_answer_count})")
+                if blocked_answer_count >= 2:
+                    print(f"[REASONING] Agent unable to retrieve chunks after {blocked_answer_count} attempts — breaking loop")
+                    return {
+                        "situation_facts": situation_facts,
+                        "draft_answer": "",
+                        "chunks_used": [],
+                        "status": "no_info",
+                        "iterations": iterations
+                    }
                 messages.append({
                     "role": "user",
                     "content": (
@@ -243,6 +254,7 @@ You MUST retrieve policy chunks before providing any Answer."""
             observation = _execute_action(action, action_input, user_id, chunks_used)
             messages.append({"role": "user", "content": f"Observation: {observation}"})
         else:
+            print(f"[REASONING] No action parsed. Raw response:\n{response[:300]}")
             messages.append({
                 "role": "user",
                 "content": "Continue. Use an Action or provide your final Answer."
@@ -256,4 +268,4 @@ You MUST retrieve policy chunks before providing any Answer."""
         "status": "no_info",
         "iterations": iterations
     }
-# end of file
+# end of file now
