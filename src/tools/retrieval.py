@@ -38,13 +38,14 @@ def _embed_query(text: str) -> list[float]:
     """
     Embeds a query string using Ollama's nomic-embed-text model.
     Must match the embedding model used at ingestion time.
+    Uses /api/embed to match the batch embedder endpoint.
     """
     response = requests.post(
-        f"{OLLAMA_BASE_URL}/api/embeddings",
-        json={"model": EMBEDDING_MODEL, "prompt": text}
+        f"{OLLAMA_BASE_URL}/api/embed",
+        json={"model": EMBEDDING_MODEL, "input": text}
     )
     response.raise_for_status()
-    return response.json()["embedding"]
+    return response.json()["embeddings"][0]
 
 
 def retrieve_chunks(query: str, user_id: str, top_k: int = TOP_K_RESULTS) -> list[dict]:

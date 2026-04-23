@@ -1,12 +1,8 @@
 {
   "user_id": "1263dbbc-b5af-42d2-af49-ba20324deffe",
   "facts": {
-    "role": "None",
-    "employment_duration": "resigned",
-    "employment_type": "full-time",
-    "department": "None",
-    "location": "None",
-    "HR_situation": "left with $500 remaining in Healthcare FSA"
+    "age": "62",
+    "annual_income": "180000"
   },
-  "last_updated": "2026-04-23T17:34:56.454458"
+  "last_updated": "2026-04-23T18:17:08.041048"
 }

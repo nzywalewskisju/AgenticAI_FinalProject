@@ -63,13 +63,14 @@ def _embed_query(text: str) -> list[float]:
     """
     Embeds a query string using Ollama's nomic-embed-text model.
     Must match the embedding model used at ingestion time.
+    Uses /api/embed to match the batch embedder endpoint.
     """
     response = requests.post(
-        f"{OLLAMA_BASE_URL}/api/embeddings",
-        json={"model": EMBEDDING_MODEL, "prompt": text}
+        f"{OLLAMA_BASE_URL}/api/embed",
+        json={"model": EMBEDDING_MODEL, "input": text}
     )
     response.raise_for_status()
-    return response.json()["embedding"]
+    return response.json()["embeddings"][0]
 
 
 def check_policy_coverage(topic: str, user_id: str) -> dict:
@@ -90,7 +91,7 @@ def check_policy_coverage(topic: str, user_id: str) -> dict:
         embedding = _embed_query(topic)
         results = collection.query(
             query_embeddings=[embedding],
-            n_results=min(3, collection.count()),
+            n_results=min(5, collection.count()),  # was 3
             include=["distances", "documents"]
         )
 
@@ -100,7 +101,7 @@ def check_policy_coverage(topic: str, user_id: str) -> dict:
 
         best_distance = min(distances)
         # Cosine distance: lower = more similar. 0.5 is a loose coverage threshold.
-        covered = best_distance < 0.5
+        covered = best_distance < 0.7  # was 0.5
 
         return {
             "covered": covered,
