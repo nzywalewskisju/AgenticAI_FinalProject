@@ -73,16 +73,6 @@ def run_orchestrator(
 ) -> dict:
     """
     Main entry point. Accepts a query and user_id, returns a response dict.
-    Returns:
-    {
-        answer: str,
-        status: str,           # "success"|"escalated"|"out_of_scope"|"no_info"|"clarification"|"error"
-        route: str,
-        new_profile_facts: list[str],
-        chunks_used: list,
-        grounding_score: float,
-        loading_steps: list[str]   # for GUI status display
-    }
     """
     if session_id is None:
         session_id = str(uuid.uuid4())
@@ -93,7 +83,7 @@ def run_orchestrator(
         loading_steps.append(msg)
         print(f"[ORCHESTRATOR] {msg}")
 
-    # ── Step 1: Extract profile facts from this message ────────────────────────
+    # ── Step 1: Extract profile facts ─────────────────────────────────────────
     step("Checking your profile...")
     new_facts = extract_and_update_profile(user_id, query)
 
@@ -101,7 +91,7 @@ def run_orchestrator(
     step("Classifying your query...")
     routing = classify_query(query)
 
-    # ── Step 3: Handle out-of-scope immediately ────────────────────────────────
+    # ── Step 3: Handle out-of-scope ────────────────────────────────────────────
     if routing.category == ROUTE_OUT_OF_SCOPE:
         return {
             "answer": "I can only help with HR policy questions. Your question appears to be outside that scope. Please ask about topics like PTO, benefits, workplace policies, or your employment situation.",
@@ -130,7 +120,6 @@ def run_orchestrator(
     step("Running compliance pre-check...")
     precheck = run_governance_precheck(query, user_id)
     if not precheck["cleared"]:
-        # Log escalated queries to audit log
         from src.tools.governance import write_audit_log
         write_audit_log(
             session_id=session_id,
@@ -163,6 +152,7 @@ def run_orchestrator(
     review_result = None
     reasoning_result = None
     failure_history = []
+    all_chunks_accumulated = []
 
     while retry_count < MAX_REVIEW_RETRIES:
         if retry_count == 0:
@@ -170,7 +160,6 @@ def run_orchestrator(
         else:
             step(f"Refining answer (attempt {retry_count + 1})...")
 
-        # Append failure context on retries so agent knows what went wrong
         retry_context = ""
         if failure_history:
             retry_context = "\n\nPREVIOUS ATTEMPT FEEDBACK:\n" + "\n".join(failure_history)
@@ -179,13 +168,20 @@ def run_orchestrator(
             query=query + retry_context,
             user_id=user_id,
             session_context=session_context,
-            profile_context=profile_context
+            profile_context=profile_context,
+            prior_chunks=all_chunks_accumulated
         )
+
+        # Accumulate chunks across retries
+        for c in reasoning_result.get("chunks_used", []):
+            if c not in all_chunks_accumulated:
+                all_chunks_accumulated.append(c)
 
         print(f"[ORCHESTRATOR] Reasoning status: {reasoning_result['status']}")
         print(f"[ORCHESTRATOR] Chunks used: {len(reasoning_result['chunks_used'])}")
         print(f"[ORCHESTRATOR] Iterations: {reasoning_result['iterations']}")
-        # Handle clarification request — surface to user immediately
+
+        # Handle clarification
         if reasoning_result["status"] == "clarification":
             return {
                 "answer": reasoning_result["draft_answer"],
@@ -197,8 +193,8 @@ def run_orchestrator(
                 "loading_steps": loading_steps
             }
 
-        # No-chunks guard — reject if reasoning produced no evidence
-        if not reasoning_result["chunks_used"]:
+        # No-chunks guard
+        if not all_chunks_accumulated:
             failure_history.append("No policy chunks were retrieved. You must retrieve relevant chunks before answering.")
             retry_count += 1
             continue
@@ -209,13 +205,13 @@ def run_orchestrator(
             draft_answer=reasoning_result["draft_answer"],
             query=query,
             situation_facts=reasoning_result["situation_facts"],
-            chunks_used=reasoning_result["chunks_used"]
+            chunks_used=all_chunks_accumulated,
+            is_retry=retry_count > 0
         )
 
         if review_result["passed"]:
             break
 
-        # Review failed — record why and retry
         failure_history.append(f"Review rejection: {review_result['failure_reason']}")
         retry_count += 1
 
@@ -231,7 +227,7 @@ def run_orchestrator(
             "status": "no_info",
             "route": routing.category,
             "new_profile_facts": new_facts,
-            "chunks_used": reasoning_result["chunks_used"] if reasoning_result else [],
+            "chunks_used": all_chunks_accumulated,
             "grounding_score": review_result["grounding_score"] if review_result else 0.0,
             "loading_steps": loading_steps
         }
@@ -243,7 +239,7 @@ def run_orchestrator(
         user_id=user_id,
         query=query,
         route=routing.category,
-        chunks_used=reasoning_result["chunks_used"],
+        chunks_used=all_chunks_accumulated,
         situation_facts=reasoning_result["situation_facts"],
         final_answer=review_result["answer"],
         grounding_score=review_result["grounding_score"]
@@ -259,7 +255,7 @@ def run_orchestrator(
         "status": "success",
         "route": routing.category,
         "new_profile_facts": new_facts,
-        "chunks_used": reasoning_result["chunks_used"],
+        "chunks_used": all_chunks_accumulated,
         "grounding_score": review_result["grounding_score"],
         "loading_steps": loading_steps
     }

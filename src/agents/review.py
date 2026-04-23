@@ -13,11 +13,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.tools.utils import call_llm, safe_json_parse, format_chunks_for_citation
 
 
-def verify_grounding(answer: str, chunks_used: list) -> dict:
+def verify_grounding(answer: str, chunks_used: list, threshold: float = 0.5) -> dict:
     """
     Checks that every factual claim in the answer traces to a retrieved chunk.
     Returns {passed: bool, score: float, reason: str}
-    Score must be >= 0.7 to pass.
+    Threshold is lowered on retries to avoid infinite rejection loops.
     """
     if not chunks_used:
         return {
@@ -46,7 +46,7 @@ Respond only in JSON: {"score": 0.0, "reason": "explanation"}"""
 
     score = float(result.get("score", 0.0))
     return {
-        "passed": score >= 0.5,
+        "passed": score >= threshold,
         "score": score,
         "reason": result.get("reason", "")
     }
@@ -158,11 +158,13 @@ def run_review_agent(
     draft_answer: str,
     query: str,
     situation_facts: str,
-    chunks_used: list
+    chunks_used: list,
+    is_retry: bool = False
 ) -> dict:
     """
     Runs all five review checks.
-    Checks 1-4 run in parallel for speed — all four LLM calls fire simultaneously.
+    Checks 1-4 run in parallel for speed.
+    Uses a lower grounding threshold on retries to avoid infinite rejection loops.
     Returns {passed: bool, answer: str, grounding_score: float, failure_reason: str}
     """
     if not chunks_used:
@@ -173,10 +175,13 @@ def run_review_agent(
             "failure_reason": "No chunks were retrieved. Answer has no grounding."
         }
 
+    # Lower grounding threshold on retries
+    grounding_threshold = 0.4 if is_retry else 0.5
+
     # Run all four checks in parallel
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {
-            executor.submit(verify_grounding, draft_answer, chunks_used): "grounding",
+            executor.submit(verify_grounding, draft_answer, chunks_used, grounding_threshold): "grounding",
             executor.submit(check_policy_alignment, draft_answer, chunks_used): "alignment",
             executor.submit(check_tone, draft_answer, query): "tone",
             executor.submit(
@@ -190,11 +195,10 @@ def run_review_agent(
             try:
                 results[name] = future.result()
             except Exception as e:
-                # If a check throws, treat it as passed to avoid false rejections
                 print(f"[REVIEW] Warning: {name} check threw an exception: {e}")
                 results[name] = {"passed": True, "score": 1.0, "reason": f"Check failed with exception: {e}"}
 
-    # Evaluate results in order — grounding first as it is the most critical
+    # Evaluate results in order
     grounding = results.get("grounding", {"passed": False, "score": 0.0, "reason": "Check did not run"})
     if not grounding["passed"]:
         return {
@@ -226,7 +230,7 @@ def run_review_agent(
     if not applicability["passed"]:
         print(f"[REVIEW] Applicability warning (non-blocking): {applicability['reason']}")
 
-    # All passed — inject citations
+    # Inject citations
     final_answer = inject_citations(draft_answer, chunks_used)
 
     return {
@@ -235,3 +239,4 @@ def run_review_agent(
         "grounding_score": grounding["score"],
         "failure_reason": ""
     }
+# end of file

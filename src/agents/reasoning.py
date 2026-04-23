@@ -55,6 +55,14 @@ SEARCH QUERY FORMAT:
 - Bad: retrieve_chunks: "401k plan limits" AND "catch-up contributions"
 - Bad: keyword_search: "catch-up contribution" AND "age 62"
 
+CRITICAL FORMAT RULE:
+Every Action MUST be on a single line in exactly this format:
+Action: tool_name: your input here
+
+NEVER use Action: followed by bullet points or multiple lines.
+NEVER use Action: as a label for reasoning notes.
+If you are reasoning, use Thought: not Action:
+
 AVAILABLE ACTIONS:
 - check_policy_coverage: <topic> — check if relevant policy exists before retrieving
 - retrieve_chunks: <plain natural language query> — semantic search for relevant policy sections
@@ -65,7 +73,7 @@ AVAILABLE ACTIONS:
 
 FORMAT:
 Thought: [your reasoning about what to do next]
-Action: [action_name]: [input]
+Action: tool_name: input on this same line
 PAUSE
 
 When you have enough information to give a complete, grounded answer:
@@ -160,14 +168,17 @@ def run_reasoning_agent(
     query: str,
     user_id: str,
     session_context: str = "",
-    profile_context: str = ""
+    profile_context: str = "",
+    prior_chunks: list = None
 ) -> dict:
     """
     Runs the ReAct loop for the given query.
+    Accepts prior_chunks from previous attempts so the agent does not
+    start from zero on retries.
     Returns {situation_facts, draft_answer, chunks_used, status, iterations}
     """
     print(f"[REASONING] Starting ReAct loop for user: {user_id}")
-    chunks_used = []
+    chunks_used = list(prior_chunks) if prior_chunks else []
 
     context_block = ""
     if profile_context and "No profile" not in profile_context:
@@ -175,12 +186,17 @@ def run_reasoning_agent(
     if session_context and "No prior" not in session_context:
         context_block += f"\n\nPRIOR CONVERSATION:\n{session_context}"
 
+    # Tell the agent about prior chunks if any exist
+    prior_context = ""
+    if chunks_used:
+        prior_context = f"\n\nNOTE: {len(chunks_used)} policy chunks were already retrieved in a previous attempt. You may proceed directly to reasoning about the user's situation using those chunks, or retrieve additional chunks if needed."
+
     initial_prompt = f"""USER QUERY: {query}
-{context_block}
+{context_block}{prior_context}
 
 Begin by extracting the facts of the user's situation, then check policy coverage,
 then retrieve relevant policy, then reason about how the policy applies to their specific situation.
-You MUST retrieve policy chunks before providing any Answer."""
+You MUST retrieve policy chunks before providing any Answer unless prior chunks are already provided above."""
 
     messages = [{"role": "user", "content": initial_prompt}]
 
@@ -213,7 +229,7 @@ You MUST retrieve policy chunks before providing any Answer."""
                 "iterations": iterations
             }
 
-        # Check for final answer — but only allow if chunks have been retrieved
+        # Check for final answer — only allow if chunks have been retrieved
         if "Answer:" in response:
             if not chunks_used:
                 blocked_answer_count += 1
@@ -257,7 +273,12 @@ You MUST retrieve policy chunks before providing any Answer."""
             print(f"[REASONING] No action parsed. Raw response:\n{response[:300]}")
             messages.append({
                 "role": "user",
-                "content": "Continue. Use an Action or provide your final Answer."
+                "content": (
+                    "Your last response did not contain a valid Action. "
+                    "Remember: every Action must be on a single line like this:\n"
+                    "Action: tool_name: your input here\n"
+                    "Use an Action or provide your final Answer."
+                )
             })
 
     # Max turns reached without an answer
@@ -268,4 +289,4 @@ You MUST retrieve policy chunks before providing any Answer."""
         "status": "no_info",
         "iterations": iterations
     }
-# end of file now
+# new end of file
