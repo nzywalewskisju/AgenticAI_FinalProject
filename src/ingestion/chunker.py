@@ -67,7 +67,7 @@ def chunk_document(document: dict) -> list[dict]:
     """
     Takes a single loaded document {text, metadata} and returns
     a list of chunk dicts ready for embedding.
-    Applies hybrid chunking strategy: headings → paragraphs → fixed-size.
+    Applies hybrid chunking strategy: headings → paragraphs → merge fragments → fixed-size.
     Each chunk carries full metadata including section_header and chunk_index.
     """
     text = document["text"]
@@ -81,17 +81,30 @@ def chunk_document(document: dict) -> list[dict]:
     if not sections:
         sections = _split_by_paragraphs(text)
 
-    # Step 3: apply fixed-size fallback within any section that is too large
-    final_sections = []
+    # Step 3: merge short fragments — prevents table rows and PDF table
+    # fragments from becoming isolated chunks that cannot be retrieved
+    merged_sections = []
     for header, section_text in sections:
+        if len(section_text.strip()) < 150 and merged_sections:
+            # Merge into previous section instead of creating a standalone chunk
+            prev_header, prev_text = merged_sections[-1]
+            merged_sections[-1] = (prev_header, prev_text + "\n" + section_text)
+        else:
+            merged_sections.append((header, section_text))
+
+    # Step 4: apply fixed-size fallback within any section that is too large
+    final_sections = []
+    for header, section_text in merged_sections:
         if len(section_text) > CHUNK_SIZE:
             sub = _apply_fixed_size_fallback(header, section_text)
             final_sections.extend(sub)
         else:
             final_sections.append((header, section_text))
 
-    # Build chunk dicts with full metadata
+    # Step 5: build chunk dicts with full metadata
     for i, (header, chunk_text) in enumerate(final_sections):
+        if not chunk_text.strip():
+            continue
         chunk_metadata = {
             **metadata,
             "section_header": header,

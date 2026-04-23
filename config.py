@@ -29,7 +29,7 @@ CHUNK_SIZE    = 600
 CHUNK_OVERLAP = 80
 
 # ── Agent behaviour ────────────────────────────────────────────────────────────
-MAX_REACT_TURNS      = 6
+MAX_REACT_TURNS = 8  # was 6
 ESCALATION_THRESHOLD = 0.75
 
 # ── Routing categories ─────────────────────────────────────────────────────────

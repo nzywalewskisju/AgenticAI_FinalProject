@@ -97,6 +97,7 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
     # Sanitize query — strip quotes and boolean operators the model may have added
     action_input = (
         action_input.strip()
+        .replace("_", " ") 
         .replace(" AND ", " ")
         .replace(" OR ", " ")
         .replace(" NOT ", " ")
