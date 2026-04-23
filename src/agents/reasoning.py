@@ -78,12 +78,16 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
     action = action.strip().lower()
     action_input = action_input.strip()
 
+    print(f"[REASONING] Action: {action} | Input: {action_input}")
+
     if action == "check_policy_coverage":
         result = check_policy_coverage(action_input, user_id)
+        print(f"[REASONING] Coverage result: {result}")
         return f"Policy coverage check: {result['reason']} Covered: {result['covered']}"
 
     elif action == "retrieve_chunks":
         chunks = retrieve_chunks(action_input, user_id)
+        print(f"[REASONING] Retrieved {len(chunks)} chunks")
         if not chunks:
             return "No relevant chunks found for this query."
         for c in chunks:
@@ -93,6 +97,7 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
 
     elif action == "keyword_search":
         chunks = keyword_search(action_input, user_id)
+        print(f"[REASONING] Keyword search returned {len(chunks)} chunks")
         if not chunks:
             return "No results found for keyword search."
         for c in chunks:
@@ -132,6 +137,7 @@ def run_reasoning_agent(
     Runs the ReAct loop for the given query.
     Returns {situation_facts, draft_answer, chunks_used, status, iterations}
     """
+    print(f"[REASONING] Starting ReAct loop for user: {user_id}")  # ← add this
     chunks_used = []
 
     context_block = ""

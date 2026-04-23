@@ -182,6 +182,9 @@ def run_orchestrator(
             profile_context=profile_context
         )
 
+        print(f"[ORCHESTRATOR] Reasoning status: {reasoning_result['status']}")
+        print(f"[ORCHESTRATOR] Chunks used: {len(reasoning_result['chunks_used'])}")
+        print(f"[ORCHESTRATOR] Iterations: {reasoning_result['iterations']}")
         # Handle clarification request — surface to user immediately
         if reasoning_result["status"] == "clarification":
             return {
