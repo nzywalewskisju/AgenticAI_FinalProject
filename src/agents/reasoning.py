@@ -36,20 +36,29 @@ You follow the ReAct pattern: Thought → Action → PAUSE → Observation → r
 
 RULES:
 - You MUST call check_policy_coverage before calling retrieve_chunks.
-- If check_policy_coverage returns covered: False, you MUST still try keyword_search with specific terms before giving up.
-- If retrieve_chunks returns no results, you MUST try keyword_search as a fallback.
-- keyword_search finds exact terms that semantic search may miss — always try it for specific policy terms like "401k", "COBRA", "FSA", "catch-up contribution".
+- You MUST call retrieve_chunks or keyword_search on EVERY query — no exceptions.
+- You MUST NOT produce an Answer until you have retrieved at least one chunk.
 - You MUST extract the facts of the user's situation before retrieving anything.
 - You MUST apply retrieved policy to the user's specific facts — not just quote the policy.
 - You MUST NOT make up policy details. If you cannot find relevant policy, say so.
 - You MUST NOT use hedging language: never say "typically", "usually", "generally", "I think", "probably".
+- You MUST NOT use AND, OR, or quote operators in search queries — use plain natural language only.
 - If the user's situation is unclear, call request_clarification.
 - Every factual claim in your answer MUST come from retrieved chunks.
+- If retrieve_chunks returns no results, you MUST try keyword_search with different plain terms.
+- If keyword_search returns no results, try retrieve_chunks again with simpler terms.
+
+SEARCH QUERY FORMAT:
+- Use plain natural language — no quotes, no AND, no OR, no special operators
+- Good: retrieve_chunks: 401k contribution limits catch-up
+- Good: keyword_search: 401k catch-up contribution age
+- Bad: retrieve_chunks: "401k plan limits" AND "catch-up contributions"
+- Bad: keyword_search: "catch-up contribution" AND "age 62"
 
 AVAILABLE ACTIONS:
 - check_policy_coverage: <topic> — check if relevant policy exists before retrieving
-- retrieve_chunks: <query> — semantic search for relevant policy sections
-- keyword_search: <terms> — exact keyword search for specific policy terms
+- retrieve_chunks: <plain natural language query> — semantic search for relevant policy sections
+- keyword_search: <plain terms> — exact keyword search for specific policy terms
 - rerank_results: <query> — re-score current chunks for relevance (call after retrieving)
 - get_current_date: now — get today's date for reasoning about effective dates
 - request_clarification: <question> — ask the user for more detail before proceeding
@@ -76,7 +85,17 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
     Updates chunks_used in place when retrieval actions return chunks.
     """
     action = action.strip().lower()
-    action_input = action_input.strip()
+
+    # Sanitize query — strip quotes and boolean operators the model may have added
+    action_input = (
+        action_input.strip()
+        .replace(" AND ", " ")
+        .replace(" OR ", " ")
+        .replace(" NOT ", " ")
+        .replace('"', '')
+        .replace("'", "")
+        .strip()
+    )
 
     print(f"[REASONING] Action: {action} | Input: {action_input}")
 
@@ -89,7 +108,11 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
         chunks = retrieve_chunks(action_input, user_id)
         print(f"[REASONING] Retrieved {len(chunks)} chunks")
         if not chunks:
-            return "No relevant chunks found for this query."
+            return (
+                "No relevant chunks found for this query. "
+                "Try keyword_search with different plain terms, "
+                "or try retrieve_chunks with a simpler, shorter query."
+            )
         for c in chunks:
             if c not in chunks_used:
                 chunks_used.append(c)
@@ -99,7 +122,10 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
         chunks = keyword_search(action_input, user_id)
         print(f"[REASONING] Keyword search returned {len(chunks)} chunks")
         if not chunks:
-            return "No results found for keyword search."
+            return (
+                "No results found for keyword search. "
+                "Try retrieve_chunks with a plain natural language query instead."
+            )
         for c in chunks:
             if c not in chunks_used:
                 chunks_used.append(c)
@@ -108,7 +134,6 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
     elif action == "rerank_results":
         if not chunks_used:
             return "No chunks to rerank. Retrieve chunks first."
-        # Skip reranking if top chunk is already highly confident
         top_distance = chunks_used[0].get("distance", 1.0)
         if top_distance < RERANK_SKIP_THRESHOLD:
             return f"Top chunk is already highly relevant (distance {top_distance:.3f}). Skipping rerank."
@@ -124,7 +149,11 @@ def _execute_action(action: str, action_input: str, user_id: str, chunks_used: l
         return f"CLARIFICATION_NEEDED: {action_input}"
 
     else:
-        return f"Unknown action: {action}. Check available actions in your instructions."
+        return (
+            f"Unknown action: {action}. "
+            f"Available actions: check_policy_coverage, retrieve_chunks, "
+            f"keyword_search, rerank_results, get_current_date, request_clarification."
+        )
 
 
 def run_reasoning_agent(
@@ -137,7 +166,7 @@ def run_reasoning_agent(
     Runs the ReAct loop for the given query.
     Returns {situation_facts, draft_answer, chunks_used, status, iterations}
     """
-    print(f"[REASONING] Starting ReAct loop for user: {user_id}")  # ← add this
+    print(f"[REASONING] Starting ReAct loop for user: {user_id}")
     chunks_used = []
 
     context_block = ""
@@ -150,7 +179,8 @@ def run_reasoning_agent(
 {context_block}
 
 Begin by extracting the facts of the user's situation, then check policy coverage,
-then retrieve relevant policy, then reason about how the policy applies to their specific situation."""
+then retrieve relevant policy, then reason about how the policy applies to their specific situation.
+You MUST retrieve policy chunks before providing any Answer."""
 
     messages = [{"role": "user", "content": initial_prompt}]
 
@@ -171,6 +201,7 @@ then retrieve relevant policy, then reason about how the policy applies to their
         if iterations == 1 and "situation" in response.lower():
             situation_facts = response.split("Action:")[0].strip()
 
+        # Check for clarification request
         if "CLARIFICATION_NEEDED:" in response:
             question = response.split("CLARIFICATION_NEEDED:")[-1].strip()
             return {
@@ -181,7 +212,20 @@ then retrieve relevant policy, then reason about how the policy applies to their
                 "iterations": iterations
             }
 
+        # Check for final answer — but only allow if chunks have been retrieved
         if "Answer:" in response:
+            if not chunks_used:
+                print(f"[REASONING] Agent tried to answer without retrieving chunks — forcing retrieval")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "You have not retrieved any policy documents yet. "
+                        "You MUST call check_policy_coverage and then retrieve_chunks "
+                        "or keyword_search before providing an Answer. "
+                        "Do not answer from memory or training data."
+                    )
+                })
+                continue
             answer = response.split("Answer:")[-1].strip()
             return {
                 "situation_facts": situation_facts,
@@ -191,6 +235,7 @@ then retrieve relevant policy, then reason about how the policy applies to their
                 "iterations": iterations
             }
 
+        # Parse and execute action
         action_match = ACTION_RE.search(response)
         if action_match:
             action = action_match.group(1)
@@ -203,6 +248,7 @@ then retrieve relevant policy, then reason about how the policy applies to their
                 "content": "Continue. Use an Action or provide your final Answer."
             })
 
+    # Max turns reached without an answer
     return {
         "situation_facts": situation_facts,
         "draft_answer": "",
