@@ -40,15 +40,37 @@ def classify_query(query: str) -> RoutingDecision:
     system_prompt = f"""You are a query classifier for an HR Policy Assistant.
 Classify the query into exactly one of these categories:
 
-"{ROUTE_IN_SCOPE}": General HR questions — PTO, benefits, remote work, payroll, expenses,
-  onboarding, dress code, performance reviews, training, promotions, reimbursement.
+"{ROUTE_IN_SCOPE}": ANY question about employment, workplace, or company policies including:
+  - Health insurance, medical plans, dental, vision
+  - FSA, HSA, healthcare savings accounts, rollover amounts, contribution limits
+  - COBRA, benefits continuation after leaving
+  - 401k, retirement, pension, matching contributions
+  - PTO, vacation, sick leave, holidays, time off
+  - Payroll, salary, pay schedule, compensation, bonuses
+  - Remote work, hybrid work, work from home policies
+  - Expense reimbursement, travel policy
+  - Onboarding, offboarding, resignation, termination
+  - Parental leave, FMLA, medical leave, disability leave
+  - Performance reviews, promotions, PIPs
+  - Dress code, conduct, workplace policies
+  - Benefits enrollment, open enrollment, qualifying life events
+  - Wellness stipend, professional development, EAP
+  - Any question about what a company policy says or covers
 
-"{ROUTE_HIGH_STAKES}": Sensitive HR matters requiring human involvement — harassment,
-  discrimination, termination disputes, FMLA, medical accommodation, ADA, retaliation,
-  whistleblower complaints, hostile work environment, legal threats, wrongful termination.
+"{ROUTE_HIGH_STAKES}": Sensitive HR matters requiring human involvement:
+  - Harassment, discrimination, hostile work environment
+  - Termination disputes, wrongful termination
+  - FMLA disputes, medical accommodation requests, ADA
+  - Retaliation claims, whistleblower complaints
+  - Legal threats against the company or employee
 
-"{ROUTE_OUT_OF_SCOPE}": Anything not HR-related — coding, math, weather, personal advice,
-  general knowledge questions, anything unrelated to employment or workplace policy.
+"{ROUTE_OUT_OF_SCOPE}": ONLY questions with zero connection to employment or workplace:
+  - Coding help, math problems, science questions
+  - Weather, sports, entertainment, news
+  - Personal life advice unrelated to work
+  - General knowledge questions about the world
+
+When in doubt, classify as "{ROUTE_IN_SCOPE}". It is always better to attempt an HR answer than to incorrectly reject a legitimate benefits question.
 
 Respond only in JSON: {{"category": "...", "confidence": 0.0, "reasoning": "..."}}"""
 
