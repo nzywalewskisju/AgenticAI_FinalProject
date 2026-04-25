@@ -17,6 +17,7 @@
 #     — strips markdown code fences and whitespace from LLM JSON responses
 #     — use before every json.loads() call on an LLM response
 
+import config
 import json
 import re
 import requests
@@ -26,12 +27,24 @@ from config import LLM_MODEL, OLLAMA_BASE_URL
 
 def call_llm(prompt: str, system_prompt: str = "", temperature: float = 0) -> str:
     """
-    Single entry point for all Ollama/Llama calls in the system.
+    Single entry point for all LLM calls in the system.
+    Routes to Ollama or OpenAI based on ACTIVE_LLM_PROVIDER in config.
     Temperature is 0 by default on every call — never change this default.
-    All LLM calls in the system go through here, never call Ollama directly.
+    """
+    import config
+
+    if config.ACTIVE_LLM_PROVIDER == "openai":
+        return _call_openai(prompt, system_prompt, temperature)
+    else:
+        return _call_ollama(prompt, system_prompt, temperature)
+
+
+def _call_ollama(prompt: str, system_prompt: str = "", temperature: float = 0) -> str:
+    """
+    Calls local Llama via Ollama REST API.
     """
     payload = {
-        "model": LLM_MODEL,
+        "model": config.LLM_MODEL,
         "messages": [],
         "stream": False,
         "options": {"temperature": temperature}
@@ -39,15 +52,42 @@ def call_llm(prompt: str, system_prompt: str = "", temperature: float = 0) -> st
 
     if system_prompt:
         payload["messages"].append({"role": "system", "content": system_prompt})
-
     payload["messages"].append({"role": "user", "content": prompt})
 
     response = requests.post(
-        f"{OLLAMA_BASE_URL}/api/chat",
+        f"{config.OLLAMA_BASE_URL}/api/chat",
         json=payload
     )
     response.raise_for_status()
     return response.json()["message"]["content"]
+
+
+def _call_openai(prompt: str, system_prompt: str = "", temperature: float = 0) -> str:
+    """
+    Calls GPT-4o mini via OpenAI API.
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        raise ImportError(
+            "openai package is not installed. "
+            "Run: pip install openai"
+        )
+
+    import config
+    client = OpenAI(api_key=config.OPENAI_API_KEY)
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    response = client.chat.completions.create(
+        model=config.OPENAI_MODEL,
+        messages=messages,
+        temperature=temperature
+    )
+    return response.choices[0].message.content
 
 
 def get_current_date() -> str:

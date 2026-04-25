@@ -10,26 +10,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Model settings ─────────────────────────────────────────────────────────────
-LLM_MODEL = "llama3.2"
+LLM_MODEL        = "llama3.2"           # default — overridden at runtime by GUI
 EMBEDDING_MODEL  = "nomic-embed-text"
 OLLAMA_BASE_URL  = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL     = "gpt-4o-mini"
 
 # ── ChromaDB ───────────────────────────────────────────────────────────────────
 CHROMA_DB_PATH  = "./db"
 COLLECTION_NAME = "hr_documents"
 
 # ── Retrieval ──────────────────────────────────────────────────────────────────
-TOP_K_RESULTS = 5        # reduced from 5 — faster retrieval, negligible accuracy cost
-# Cosine distance: 0 = identical, 1 = orthogonal.
-# 0.35 means "must be at least moderately similar". Tune after ingesting real docs.
-SIMILARITY_THRESHOLD = 0.6
+TOP_K_RESULTS        = 5
+SIMILARITY_THRESHOLD = 0.75
 
 # ── Ingestion ──────────────────────────────────────────────────────────────────
 CHUNK_SIZE    = 600
 CHUNK_OVERLAP = 80
 
 # ── Agent behaviour ────────────────────────────────────────────────────────────
-MAX_REACT_TURNS = 4
+MAX_REACT_TURNS      = 4
 ESCALATION_THRESHOLD = 0.75
 
 # ── Routing categories ─────────────────────────────────────────────────────────
@@ -53,9 +53,12 @@ SECURITY_QUESTIONS = [
 ]
 
 # ── Reranking ──────────────────────────────────────────────────────────────────
-# Chunks with a distance below this threshold are considered highly confident
-# and will skip reranking entirely to save an LLM call.
 RERANK_SKIP_THRESHOLD = 0.15
+
+# ── Active model — set at runtime by GUI, read by call_llm ────────────────────
+# "ollama" = use local llama3.2 via Ollama
+# "openai" = use gpt-4o-mini via OpenAI API
+ACTIVE_LLM_PROVIDER = "ollama"
 
 # ── Ensure required directories exist at import time ──────────────────────────
 for _dir in ["./db", "./logs", "./data/profiles", "./data/registry", "./data/users"]:

@@ -338,6 +338,11 @@ class MainWindow:
         self._build()
         self._refresh_documents()
         self._refresh_profile()
+
+        # Set initial model provider
+        import config
+        config.ACTIVE_LLM_PROVIDER = "ollama"
+
         self.root.mainloop()
 
     def _center(self, w, h):
@@ -348,19 +353,73 @@ class MainWindow:
         y = (sh - h) // 2
         self.root.geometry(f"{w}x{h}+{x}+{y}")
 
+    def _on_model_change(self):
+        """
+        Updates the active LLM provider when the user switches models in the GUI.
+        Validates that an OpenAI API key exists before allowing the switch.
+        """
+        import config
+        selected = self.model_var.get()
+
+        if selected == "openai":
+            if not config.OPENAI_API_KEY:
+                messagebox.showerror(
+                    "API Key Missing",
+                    "No OpenAI API key found.\n\n"
+                    "Add OPENAI_API_KEY=your_key to your .env file and restart the app."
+                )
+                self.model_var.set("ollama")
+                config.ACTIVE_LLM_PROVIDER = "ollama"
+                return
+            config.ACTIVE_LLM_PROVIDER = "openai"
+            self._append_chat("status", "Model switched to GPT-4o mini.\n")
+            print("[GUI] Model switched to OpenAI GPT-4o mini")
+        else:
+            config.ACTIVE_LLM_PROVIDER = "ollama"
+            self._append_chat("status", "Model switched to Llama (local).\n")
+            print("[GUI] Model switched to Ollama llama3.2")
+
     def _build(self):
         # ── Top bar ────────────────────────────────────────────────────────────
         topbar = tk.Frame(self.root, bg=BG_PANEL, pady=12)
         topbar.pack(fill="x")
         tk.Label(topbar, text="HR Policy Assistant", font=FONT_TITLE,
-                 fg=TEXT, bg=BG_PANEL).pack(side="left", padx=20)
+                fg=TEXT, bg=BG_PANEL).pack(side="left", padx=20)
         tk.Label(topbar, text=f"Signed in as {self.username}",
-                 font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(side="right", padx=20)
+                font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(side="right", padx=20)
 
         self.status_var = tk.StringVar(value="● Ready")
         self.status_label = tk.Label(topbar, textvariable=self.status_var,
-                                     font=FONT_SMALL, fg=SUCCESS, bg=BG_PANEL)
+                                    font=FONT_SMALL, fg=SUCCESS, bg=BG_PANEL)
         self.status_label.pack(side="right", padx=12)
+
+        # ── Model selector ─────────────────────────────────────────────────────
+        self.model_var = tk.StringVar(value="ollama")
+        model_frame = tk.Frame(topbar, bg=BG_PANEL)
+        model_frame.pack(side="right", padx=16)
+
+        tk.Label(model_frame, text="Model:", font=FONT_SMALL,
+                fg=TEXT_DIM, bg=BG_PANEL).pack(side="left", padx=(0, 6))
+
+        ollama_btn = tk.Radiobutton(
+            model_frame, text="Llama (local)",
+            variable=self.model_var, value="ollama",
+            command=self._on_model_change,
+            font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
+            selectcolor=BG_INPUT, activebackground=BG_PANEL,
+            activeforeground=TEXT
+        )
+        ollama_btn.pack(side="left", padx=4)
+
+        openai_btn = tk.Radiobutton(
+            model_frame, text="GPT-4o mini",
+            variable=self.model_var, value="openai",
+            command=self._on_model_change,
+            font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
+            selectcolor=BG_INPUT, activebackground=BG_PANEL,
+            activeforeground=TEXT
+        )
+        openai_btn.pack(side="left", padx=4)
 
         # ── Main layout ────────────────────────────────────────────────────────
         body = tk.Frame(self.root, bg=BG)
@@ -499,7 +558,8 @@ class MainWindow:
                 result = run_orchestrator(query, user_id=self.user_id, session_id=self.session_id)
                 self.root.after(0, lambda: self._on_query_complete(result))
             except Exception as e:
-                self.root.after(0, lambda: self._on_query_error(str(e)))
+                error_msg = str(e)
+                self.root.after(0, lambda: self._on_query_error(error_msg))
 
         threading.Thread(target=query_thread, daemon=True).start()
         self._stream_loading_steps()
