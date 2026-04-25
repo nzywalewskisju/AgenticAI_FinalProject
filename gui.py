@@ -627,7 +627,18 @@ class MainWindow:
         self._submitting = False
         self._cancel_loading()
         self._set_status("● Error", ERROR)
-        self._append_chat("error", f"✗ Error: {error}\n\n")
+
+        if "insufficient_quota" in error or "429" in error:
+            self._append_chat("error", 
+                "✗ OpenAI API quota exceeded. Please add credits at platform.openai.com/billing "
+                "or switch to Llama (local) using the model selector above.\n\n"
+            )
+        elif "api key" in error.lower() or "401" in error:
+            self._append_chat("error",
+                "✗ Invalid OpenAI API key. Check your .env file and restart the app.\n\n"
+            )
+        else:
+            self._append_chat("error", f"✗ Error: {error}\n\n")
 
     def _pick_files(self):
         files = filedialog.askopenfilenames(
