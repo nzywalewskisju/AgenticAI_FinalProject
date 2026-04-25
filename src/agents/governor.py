@@ -14,7 +14,8 @@
 from src.tools.governance import (
     compliance_stamp,
     write_audit_log,
-    ALWAYS_ESCALATE_TOPICS
+    ALWAYS_ESCALATE_TOPICS,
+    detect_prompt_injection
 )
 from src.tools.utils import call_llm, safe_json_parse
 from config import ESCALATION_THRESHOLD
@@ -35,12 +36,25 @@ PII_MESSAGE = (
 
 def run_governance_precheck(query: str, user_id: str) -> dict:
     """
-    Runs PII detection and escalation risk assessment before any reasoning occurs.
-    Uses a single combined LLM call instead of two separate calls for speed.
-    Keyword check for always-escalate topics runs first — no LLM needed.
-    Returns {cleared: bool, reason: str, message: str, escalated: bool}
+    Runs security and compliance checks before any reasoning occurs.
+    Order: injection detection → always-escalate keywords → combined PII + risk LLM call
     """
-    # Always-escalate keyword check — no LLM call needed
+    # ── Layer 1: Hard keyword injection check — no LLM needed ─────────────────
+    injection_result = detect_prompt_injection(query)
+    print(f"[GOVERNOR] Injection check: is_injection={injection_result['is_injection']} reason={injection_result.get('reason', '')[:100]}")
+    if injection_result.get("is_injection"):
+        return {
+            "cleared": False,
+            "reason": f"Prompt injection detected: {injection_result.get('reason', '')}",
+            "message": (
+                "This request has been flagged as a potential security violation. "
+                "This assistant is designed to answer HR policy questions only. "
+                "Attempts to extract system data or manipulate the assistant are logged."
+            ),
+            "escalated": False
+        }
+
+    # ── Layer 2: Always-escalate keyword check — no LLM needed ────────────────
     query_lower = query.lower()
     for topic in ALWAYS_ESCALATE_TOPICS:
         if topic in query_lower:
@@ -51,7 +65,7 @@ def run_governance_precheck(query: str, user_id: str) -> dict:
                 "escalated": True
             }
 
-    # Single combined LLM call for PII + escalation risk
+    # ── Layer 3: Combined PII + escalation risk — single LLM call ─────────────
     system_prompt = f"""You are a compliance checker for an HR policy assistant.
 Analyze the query and return both a PII check and an escalation risk score.
 

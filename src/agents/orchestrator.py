@@ -12,6 +12,7 @@
 #   - return final answer or escalation/clarification message to the GUI
 
 import uuid
+import queue
 from pydantic import BaseModel
 from config import ROUTE_IN_SCOPE, ROUTE_HIGH_STAKES, ROUTE_OUT_OF_SCOPE
 from src.tools.utils import call_llm, safe_json_parse
@@ -91,11 +92,9 @@ Respond only in JSON: {{"category": "...", "confidence": 0.0, "reasoning": "..."
 def run_orchestrator(
     query: str,
     user_id: str,
-    session_id: str = None
+    session_id: str = None,
+    status_queue: queue.Queue = None
 ) -> dict:
-    """
-    Main entry point. Accepts a query and user_id, returns a response dict.
-    """
     if session_id is None:
         session_id = str(uuid.uuid4())
 
@@ -104,6 +103,8 @@ def run_orchestrator(
     def step(msg: str):
         loading_steps.append(msg)
         print(f"[ORCHESTRATOR] {msg}")
+        if status_queue:
+            status_queue.put(msg)
 
     # ── Step 1: Extract profile facts ─────────────────────────────────────────
     step("Checking your profile...")
@@ -191,7 +192,8 @@ def run_orchestrator(
             user_id=user_id,
             session_context=session_context,
             profile_context=profile_context,
-            prior_chunks=all_chunks_accumulated
+            prior_chunks=all_chunks_accumulated,
+            status_queue=status_queue
         )
 
         # Accumulate chunks across retries

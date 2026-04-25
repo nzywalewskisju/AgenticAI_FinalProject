@@ -17,6 +17,7 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
+import queue
 import uuid
 import json
 import os
@@ -329,6 +330,9 @@ class MainWindow:
         self.session_id = str(uuid.uuid4())
         self.selected_files = []
         self._submitting = False
+        self._status_queue = queue.Queue()
+        self._loading_line_start = None
+        self._poll_after_id = None
 
         self.root = tk.Tk()
         self.root.title(f"HR Policy Assistant — {self.username}")
@@ -339,7 +343,6 @@ class MainWindow:
         self._refresh_documents()
         self._refresh_profile()
 
-        # Set initial model provider
         import config
         config.ACTIVE_LLM_PROVIDER = "ollama"
 
@@ -353,11 +356,154 @@ class MainWindow:
         y = (sh - h) // 2
         self.root.geometry(f"{w}x{h}+{x}+{y}")
 
+    def _build(self):
+        # ── Top bar ────────────────────────────────────────────────────────────
+        topbar = tk.Frame(self.root, bg=BG_PANEL, pady=12)
+        topbar.pack(fill="x")
+        tk.Label(topbar, text="HR Policy Assistant", font=FONT_TITLE,
+                 fg=TEXT, bg=BG_PANEL).pack(side="left", padx=20)
+        tk.Label(topbar, text=f"Signed in as {self.username}",
+                 font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(side="right", padx=20)
+
+        self.status_var = tk.StringVar(value="● Ready")
+        self.status_label = tk.Label(topbar, textvariable=self.status_var,
+                                     font=FONT_SMALL, fg=SUCCESS, bg=BG_PANEL)
+        self.status_label.pack(side="right", padx=12)
+
+        # ── Model selector ─────────────────────────────────────────────────────
+        self.model_var = tk.StringVar(value="ollama")
+        model_frame = tk.Frame(topbar, bg=BG_PANEL)
+        model_frame.pack(side="right", padx=16)
+
+        tk.Label(model_frame, text="Model:", font=FONT_SMALL,
+                 fg=TEXT_DIM, bg=BG_PANEL).pack(side="left", padx=(0, 6))
+
+        tk.Radiobutton(
+            model_frame, text="Llama (local)",
+            variable=self.model_var, value="ollama",
+            command=self._on_model_change,
+            font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
+            selectcolor=BG_INPUT, activebackground=BG_PANEL,
+            activeforeground=TEXT
+        ).pack(side="left", padx=4)
+
+        tk.Radiobutton(
+            model_frame, text="GPT-4o mini",
+            variable=self.model_var, value="openai",
+            command=self._on_model_change,
+            font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
+            selectcolor=BG_INPUT, activebackground=BG_PANEL,
+            activeforeground=TEXT
+        ).pack(side="left", padx=4)
+
+        # ── Main layout ────────────────────────────────────────────────────────
+        body = tk.Frame(self.root, bg=BG)
+        body.pack(fill="both", expand=True)
+
+        sidebar = tk.Frame(body, bg=BG_PANEL, width=260)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+        self._build_sidebar(sidebar)
+
+        chat_area = tk.Frame(body, bg=BG)
+        chat_area.pack(side="left", fill="both", expand=True)
+        self._build_chat(chat_area)
+
+    def _build_sidebar(self, parent):
+        tk.Label(parent, text="Documents", font=FONT_LABEL,
+                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(16, 4))
+
+        tk.Button(parent, text="+ Add Documents",
+                  command=self._pick_files,
+                  font=FONT_SMALL, fg=TEXT, bg=ACCENT,
+                  activebackground=ACCENT_DIM, relief="flat",
+                  cursor="hand2", pady=6).pack(fill="x", padx=16, pady=4)
+
+        self.ingest_btn = tk.Button(parent, text="Ingest Selected Files",
+                                    command=self._run_ingestion,
+                                    font=FONT_SMALL, fg=TEXT, bg=BG_INPUT,
+                                    activebackground=ACCENT_DIM, relief="flat",
+                                    cursor="hand2", pady=6, state="disabled")
+        self.ingest_btn.pack(fill="x", padx=16, pady=2)
+
+        self.selected_label = tk.Label(parent, text="No files selected.",
+                                       font=FONT_SMALL, fg=TEXT_DIM,
+                                       bg=BG_PANEL, wraplength=220, justify="left")
+        self.selected_label.pack(anchor="w", padx=16, pady=4)
+
+        tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
+        tk.Label(parent, text="Loaded Documents", font=FONT_LABEL,
+                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(0, 4))
+
+        self.docs_frame = tk.Frame(parent, bg=BG_PANEL)
+        self.docs_frame.pack(fill="x", padx=16)
+
+        tk.Button(parent, text="Clear All Documents",
+                  command=self._clear_all_docs,
+                  font=FONT_SMALL, fg=ERROR, bg=BG_PANEL,
+                  relief="flat", cursor="hand2",
+                  activeforeground=TEXT, activebackground=BG_PANEL
+                  ).pack(anchor="w", padx=16, pady=4)
+
+        tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
+        tk.Label(parent, text="My Profile", font=FONT_LABEL,
+                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(0, 4))
+
+        self.profile_frame = tk.Frame(parent, bg=BG_PANEL)
+        self.profile_frame.pack(fill="x", padx=16)
+
+        tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
+        tk.Button(parent, text="Clear Session",
+                  command=self._clear_session,
+                  font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL,
+                  relief="flat", cursor="hand2",
+                  activeforeground=TEXT, activebackground=BG_PANEL
+                  ).pack(anchor="w", padx=16, pady=2)
+
+    def _build_chat(self, parent):
+        answer_frame = tk.Frame(parent, bg=BG)
+        answer_frame.pack(fill="both", expand=True, padx=16, pady=(16, 8))
+
+        self.answer_display = scrolledtext.ScrolledText(
+            answer_frame,
+            font=FONT_MONO, fg=TEXT, bg=BG_INPUT,
+            relief="flat", wrap="word",
+            state="disabled", padx=16, pady=16,
+            highlightthickness=1, highlightbackground=BORDER
+        )
+        self.answer_display.pack(fill="both", expand=True)
+
+        self.answer_display.tag_configure("user", foreground=ACCENT, font=("Helvetica Neue", 11, "bold"))
+        self.answer_display.tag_configure("assistant", foreground=TEXT, font=FONT_MONO)
+        self.answer_display.tag_configure("citation", foreground=TEXT_CITE, font=FONT_SMALL)
+        self.answer_display.tag_configure("status", foreground=TEXT_DIM, font=FONT_SMALL)
+        self.answer_display.tag_configure("fact", foreground=SUCCESS, font=FONT_SMALL)
+        self.answer_display.tag_configure("error", foreground=ERROR, font=FONT_SMALL)
+        self.answer_display.tag_configure("separator", foreground=BORDER)
+
+        input_frame = tk.Frame(parent, bg=BG, pady=8)
+        input_frame.pack(fill="x", padx=16, pady=(0, 16))
+
+        self.query_input = tk.Text(input_frame, font=FONT_MAIN,
+                                   fg=TEXT, bg=BG_INPUT,
+                                   insertbackground=TEXT, relief="flat",
+                                   highlightthickness=1, highlightcolor=ACCENT,
+                                   highlightbackground=BORDER,
+                                   height=3, padx=12, pady=10, wrap="word")
+        self.query_input.pack(side="left", fill="both", expand=True)
+        self.query_input.bind("<Return>", self._on_enter)
+        self.query_input.bind("<Shift-Return>", lambda e: None)
+
+        tk.Button(input_frame, text="Send",
+                  command=self._submit_query,
+                  font=FONT_LABEL, fg=TEXT, bg=ACCENT,
+                  activebackground=ACCENT_DIM,
+                  relief="flat", cursor="hand2",
+                  padx=20, pady=10).pack(side="left", padx=(8, 0))
+
+    # ── Model selector ─────────────────────────────────────────────────────────
+
     def _on_model_change(self):
-        """
-        Updates the active LLM provider when the user switches models in the GUI.
-        Validates that an OpenAI API key exists before allowing the switch.
-        """
         import config
         selected = self.model_var.get()
 
@@ -379,165 +525,10 @@ class MainWindow:
             self._append_chat("status", "Model switched to Llama (local).\n")
             print("[GUI] Model switched to Ollama llama3.2")
 
-    def _build(self):
-        # ── Top bar ────────────────────────────────────────────────────────────
-        topbar = tk.Frame(self.root, bg=BG_PANEL, pady=12)
-        topbar.pack(fill="x")
-        tk.Label(topbar, text="HR Policy Assistant", font=FONT_TITLE,
-                fg=TEXT, bg=BG_PANEL).pack(side="left", padx=20)
-        tk.Label(topbar, text=f"Signed in as {self.username}",
-                font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(side="right", padx=20)
-
-        self.status_var = tk.StringVar(value="● Ready")
-        self.status_label = tk.Label(topbar, textvariable=self.status_var,
-                                    font=FONT_SMALL, fg=SUCCESS, bg=BG_PANEL)
-        self.status_label.pack(side="right", padx=12)
-
-        # ── Model selector ─────────────────────────────────────────────────────
-        self.model_var = tk.StringVar(value="ollama")
-        model_frame = tk.Frame(topbar, bg=BG_PANEL)
-        model_frame.pack(side="right", padx=16)
-
-        tk.Label(model_frame, text="Model:", font=FONT_SMALL,
-                fg=TEXT_DIM, bg=BG_PANEL).pack(side="left", padx=(0, 6))
-
-        ollama_btn = tk.Radiobutton(
-            model_frame, text="Llama (local)",
-            variable=self.model_var, value="ollama",
-            command=self._on_model_change,
-            font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
-            selectcolor=BG_INPUT, activebackground=BG_PANEL,
-            activeforeground=TEXT
-        )
-        ollama_btn.pack(side="left", padx=4)
-
-        openai_btn = tk.Radiobutton(
-            model_frame, text="GPT-4o mini",
-            variable=self.model_var, value="openai",
-            command=self._on_model_change,
-            font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
-            selectcolor=BG_INPUT, activebackground=BG_PANEL,
-            activeforeground=TEXT
-        )
-        openai_btn.pack(side="left", padx=4)
-
-        # ── Main layout ────────────────────────────────────────────────────────
-        body = tk.Frame(self.root, bg=BG)
-        body.pack(fill="both", expand=True)
-
-        sidebar = tk.Frame(body, bg=BG_PANEL, width=260)
-        sidebar.pack(side="left", fill="y")
-        sidebar.pack_propagate(False)
-        self._build_sidebar(sidebar)
-
-        chat_area = tk.Frame(body, bg=BG)
-        chat_area.pack(side="left", fill="both", expand=True)
-        self._build_chat(chat_area)
-
-    def _build_sidebar(self, parent):
-        # ── Documents section ──────────────────────────────────────────────────
-        tk.Label(parent, text="Documents", font=FONT_LABEL,
-                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(16, 4))
-
-        file_btn = tk.Button(parent, text="+ Add Documents",
-                             command=self._pick_files,
-                             font=FONT_SMALL, fg=TEXT, bg=ACCENT,
-                             activebackground=ACCENT_DIM, relief="flat",
-                             cursor="hand2", pady=6)
-        file_btn.pack(fill="x", padx=16, pady=4)
-
-        self.ingest_btn = tk.Button(parent, text="Ingest Selected Files",
-                                    command=self._run_ingestion,
-                                    font=FONT_SMALL, fg=TEXT, bg=BG_INPUT,
-                                    activebackground=ACCENT_DIM, relief="flat",
-                                    cursor="hand2", pady=6, state="disabled")
-        self.ingest_btn.pack(fill="x", padx=16, pady=2)
-
-        self.selected_label = tk.Label(parent, text="No files selected.",
-                                       font=FONT_SMALL, fg=TEXT_DIM,
-                                       bg=BG_PANEL, wraplength=220, justify="left")
-        self.selected_label.pack(anchor="w", padx=16, pady=4)
-
-        tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
-        tk.Label(parent, text="Loaded Documents", font=FONT_LABEL,
-                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(0, 4))
-
-        self.docs_frame = tk.Frame(parent, bg=BG_PANEL)
-        self.docs_frame.pack(fill="x", padx=16)
-
-        clear_all_btn = tk.Button(parent, text="Clear All Documents",
-                                  command=self._clear_all_docs,
-                                  font=FONT_SMALL, fg=ERROR, bg=BG_PANEL,
-                                  relief="flat", cursor="hand2",
-                                  activeforeground=TEXT, activebackground=BG_PANEL)
-        clear_all_btn.pack(anchor="w", padx=16, pady=4)
-
-        # ── Profile section ────────────────────────────────────────────────────
-        tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
-        tk.Label(parent, text="My Profile", font=FONT_LABEL,
-                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(0, 4))
-
-        self.profile_frame = tk.Frame(parent, bg=BG_PANEL)
-        self.profile_frame.pack(fill="x", padx=16)
-
-        # ── Session controls ───────────────────────────────────────────────────
-        tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
-        tk.Button(parent, text="Clear Session",
-                  command=self._clear_session,
-                  font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL,
-                  relief="flat", cursor="hand2",
-                  activeforeground=TEXT, activebackground=BG_PANEL
-                  ).pack(anchor="w", padx=16, pady=2)
-
-    def _build_chat(self, parent):
-        # Answer display
-        answer_frame = tk.Frame(parent, bg=BG)
-        answer_frame.pack(fill="both", expand=True, padx=16, pady=(16, 8))
-
-        self.answer_display = scrolledtext.ScrolledText(
-            answer_frame,
-            font=FONT_MONO, fg=TEXT, bg=BG_INPUT,
-            relief="flat", wrap="word",
-            state="disabled", padx=16, pady=16,
-            highlightthickness=1, highlightbackground=BORDER
-        )
-        self.answer_display.pack(fill="both", expand=True)
-
-        # Configure text tags for formatting
-        self.answer_display.tag_configure("user", foreground=ACCENT, font=("Helvetica Neue", 11, "bold"))
-        self.answer_display.tag_configure("assistant", foreground=TEXT, font=FONT_MONO)
-        self.answer_display.tag_configure("citation", foreground=TEXT_CITE, font=FONT_SMALL)
-        self.answer_display.tag_configure("status", foreground=TEXT_DIM, font=FONT_SMALL)
-        self.answer_display.tag_configure("fact", foreground=SUCCESS, font=FONT_SMALL)
-        self.answer_display.tag_configure("error", foreground=ERROR, font=FONT_SMALL)
-        self.answer_display.tag_configure("separator", foreground=BORDER)
-
-        # Input area
-        input_frame = tk.Frame(parent, bg=BG, pady=8)
-        input_frame.pack(fill="x", padx=16, pady=(0, 16))
-
-        self.query_input = tk.Text(input_frame, font=FONT_MAIN,
-                                   fg=TEXT, bg=BG_INPUT,
-                                   insertbackground=TEXT, relief="flat",
-                                   highlightthickness=1, highlightcolor=ACCENT,
-                                   highlightbackground=BORDER,
-                                   height=3, padx=12, pady=10, wrap="word")
-        self.query_input.pack(side="left", fill="both", expand=True)
-        self.query_input.bind("<Return>", self._on_enter)
-        self.query_input.bind("<Shift-Return>", lambda e: None)
-
-        submit_btn = tk.Button(input_frame, text="Send",
-                               command=self._submit_query,
-                               font=FONT_LABEL, fg=TEXT, bg=ACCENT,
-                               activebackground=ACCENT_DIM,
-                               relief="flat", cursor="hand2",
-                               padx=20, pady=10)
-        submit_btn.pack(side="left", padx=(8, 0))
-
     # ── Event handlers ─────────────────────────────────────────────────────────
 
     def _on_enter(self, event):
-        if not event.state & 0x1:   # Shift not held
+        if not event.state & 0x1:
             self._submit_query()
             return "break"
 
@@ -548,61 +539,68 @@ class MainWindow:
         if not query:
             return
         self._submitting = True
+        self._status_queue = queue.Queue()
+        self._loading_line_start = None
         self.query_input.delete("1.0", "end")
         self._append_chat("user", f"You: {query}\n")
         self._set_status("● Thinking...", WARNING)
+        self._poll_status_queue()
 
         def query_thread():
             try:
                 from src.agents.orchestrator import run_orchestrator
-                result = run_orchestrator(query, user_id=self.user_id, session_id=self.session_id)
+                result = run_orchestrator(
+                    query,
+                    user_id=self.user_id,
+                    session_id=self.session_id,
+                    status_queue=self._status_queue
+                )
+                self._status_queue.put(None)
                 self.root.after(0, lambda: self._on_query_complete(result))
             except Exception as e:
                 error_msg = str(e)
+                self._status_queue.put(None)
                 self.root.after(0, lambda: self._on_query_error(error_msg))
 
         threading.Thread(target=query_thread, daemon=True).start()
-        self._stream_loading_steps()
 
-    def _stream_loading_steps(self):
-        steps = [
-            "Classifying your query...",
-            "Checking policy coverage...",
-            "Retrieving relevant sections...",
-            "Reasoning about your situation...",
-            "Reviewing answer quality...",
-            "Running compliance check...",
-            "Finalizing response..."
-        ]
-        self._loading_index = 0
-        self._loading_tag_start = None
+    def _poll_status_queue(self):
+        """
+        Polls the status queue every 200ms and updates the loading line.
+        Stops when it receives the None sentinel.
+        """
+        try:
+            while True:
+                msg = self._status_queue.get_nowait()
+                if msg is None:
+                    return
+                self._update_loading_line(f"  ⟳ {msg}")
+        except queue.Empty:
+            pass
+        self._poll_after_id = self.root.after(200, self._poll_status_queue)
 
-        def show_next_step():
-            if self._loading_index < len(steps):
-                step = steps[self._loading_index]
-                self._replace_loading_step(f"  ⟳ {step}\n")
-                self._loading_index += 1
-                self._loading_after_id = self.root.after(2200, show_next_step)
-
-        self._loading_after_id = self.root.after(300, show_next_step)
-
-    def _replace_loading_step(self, text: str):
+    def _update_loading_line(self, text: str):
+        """
+        Updates a single rolling line in the chat display with the latest status.
+        Replaces the previous loading line instead of appending a new one.
+        """
         self.answer_display.config(state="normal")
-        if self._loading_tag_start:
-            self.answer_display.delete(self._loading_tag_start, "end")
-        self._loading_tag_start = self.answer_display.index("end-1c")
-        self.answer_display.insert("end", text, "status")
+        if self._loading_line_start:
+            self.answer_display.delete(self._loading_line_start, "end")
+        self._loading_line_start = self.answer_display.index("end-1c")
+        self.answer_display.insert("end", f"{text}\n", "status")
         self.answer_display.see("end")
         self.answer_display.config(state="disabled")
 
     def _cancel_loading(self):
-        if hasattr(self, "_loading_after_id"):
-            self.root.after_cancel(self._loading_after_id)
-        if hasattr(self, "_loading_tag_start") and self._loading_tag_start:
-            self.answer_display.config(state="normal")
-            self.answer_display.delete(self._loading_tag_start, "end")
-            self.answer_display.config(state="disabled")
-            self._loading_tag_start = None
+        if self._poll_after_id:
+            self.root.after_cancel(self._poll_after_id)
+            self._poll_after_id = None
+        self.answer_display.config(state="normal")
+        if self._loading_line_start:
+            self.answer_display.delete(self._loading_line_start, "end")
+            self._loading_line_start = None
+        self.answer_display.config(state="disabled")
 
     def _on_query_complete(self, result: dict):
         self._submitting = False
@@ -610,6 +608,8 @@ class MainWindow:
         self._set_status("● Ready", SUCCESS)
 
         answer = result.get("answer", "No response.")
+        print(f"[GUI] Full answer received:\n{answer[:500]}")
+
         if "---\n**Sources:**" in answer:
             parts = answer.split("---\n**Sources:**")
             self._append_chat("assistant", f"\n{parts[0].strip()}\n")
@@ -629,7 +629,7 @@ class MainWindow:
         self._set_status("● Error", ERROR)
 
         if "insufficient_quota" in error or "429" in error:
-            self._append_chat("error", 
+            self._append_chat("error",
                 "✗ OpenAI API quota exceeded. Please add credits at platform.openai.com/billing "
                 "or switch to Llama (local) using the model selector above.\n\n"
             )
@@ -667,7 +667,8 @@ class MainWindow:
                 result = run_ingestion_pipeline(self.selected_files, self.user_id)
                 self.root.after(0, lambda: self._on_ingestion_complete(result))
             except Exception as e:
-                self.root.after(0, lambda: self._on_ingestion_error(str(e)))
+                error_msg = str(e)
+                self.root.after(0, lambda: self._on_ingestion_error(error_msg))
 
         threading.Thread(target=ingest_thread, daemon=True).start()
 

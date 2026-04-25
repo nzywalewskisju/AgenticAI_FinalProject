@@ -1,5 +1,7 @@
 {
   "user_id": "1263dbbc-b5af-42d2-af49-ba20324deffe",
-  "facts": {},
-  "last_updated": "2026-04-23T18:17:08.041048"
+  "facts": {
+    "role": "IT operations"
+  },
+  "last_updated": "2026-04-25T21:30:19.576112"
 }

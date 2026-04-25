@@ -20,6 +20,7 @@
 # Status: "success" | "clarification" | "no_info" | "error"
 
 import re
+import queue
 from config import MAX_REACT_TURNS, RERANK_SKIP_THRESHOLD
 from src.tools.utils import call_llm, format_chunks_for_prompt, get_current_date
 from src.tools.retrieval import retrieve_chunks, keyword_search, rerank_results
@@ -209,7 +210,8 @@ def run_reasoning_agent(
     user_id: str,
     session_context: str = "",
     profile_context: str = "",
-    prior_chunks: list = None
+    prior_chunks: list = None,
+    status_queue=None
 ) -> dict:
     """
     Runs the ReAct loop for the given query.
@@ -218,9 +220,14 @@ def run_reasoning_agent(
     start from zero on retries.
     Returns {situation_facts, draft_answer, chunks_used, status, iterations}
     """
-    print(f"[REASONING] Starting ReAct loop for user: {user_id}")
+    def emit(msg: str):
+        print(f"[REASONING] {msg}")
+        if status_queue:
+            status_queue.put(msg)
+
+    emit(f"Starting analysis...")
     chunks_used = list(prior_chunks) if prior_chunks else []
-    retrieval_count = [0]  # mutable counter passed to _execute_action
+    retrieval_count = [0]
 
     context_block = ""
     if profile_context and "No profile" not in profile_context:
@@ -228,7 +235,6 @@ def run_reasoning_agent(
     if session_context and "No prior" not in session_context:
         context_block += f"\n\nPRIOR CONVERSATION:\n{session_context}"
 
-    # Tell the agent about prior chunks if any exist from a previous attempt
     prior_context = ""
     if chunks_used:
         prior_context = (
@@ -254,6 +260,8 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
     while iterations < MAX_REACT_TURNS:
         iterations += 1
 
+        emit(f"Reasoning step {iterations} of {MAX_REACT_TURNS}...")
+
         full_prompt = "\n\n".join(
             f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
             for m in messages
@@ -265,9 +273,9 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
         if iterations == 1 and "situation" in response.lower():
             situation_facts = response.split("Action:")[0].strip()
 
-        # Check for clarification request
         if "CLARIFICATION_NEEDED:" in response:
             question = response.split("CLARIFICATION_NEEDED:")[-1].strip()
+            emit("Requesting clarification from user...")
             return {
                 "situation_facts": situation_facts,
                 "draft_answer": question,
@@ -276,10 +284,10 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
                 "iterations": iterations
             }
 
-        # Check for final answer — only allow if chunks have been retrieved
         if "Answer:" in response:
             if not chunks_used:
                 blocked_answer_count += 1
+                emit("No policy documents retrieved yet — retrieving before answering...")
                 print(f"[REASONING] Agent tried to answer without retrieving chunks — forcing retrieval (attempt {blocked_answer_count})")
                 if blocked_answer_count >= 2:
                     print(f"[REASONING] Agent unable to retrieve chunks after {blocked_answer_count} attempts — breaking loop")
@@ -300,6 +308,7 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
                     )
                 })
                 continue
+            emit("Composing answer from retrieved policy...")
             answer = response.split("Answer:")[-1].strip()
             return {
                 "situation_facts": situation_facts,
@@ -309,14 +318,31 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
                 "iterations": iterations
             }
 
-        # Parse and execute action
         action_match = ACTION_RE.search(response)
         if action_match:
             action = action_match.group(1)
             action_input = action_match.group(2)
 
+            # Emit a human-readable status for each action
+            action_display = action_input[:60].strip()
+            if action == "check_policy_coverage":
+                emit(f"Checking if policy exists for: {action_display}...")
+            elif action == "retrieve_chunks":
+                emit(f"Searching policy documents for: {action_display}...")
+            elif action == "keyword_search":
+                emit(f"Keyword search: {action_display}...")
+            elif action == "rerank_results":
+                emit(f"Ranking results by relevance...")
+            elif action == "get_current_date":
+                emit("Checking today's date...")
+            elif action == "request_clarification":
+                emit("Preparing clarification question...")
+            else:
+                emit(f"Running: {action}...")
+
             # If this is the last turn and we have chunks, force an Answer instead
             if iterations >= MAX_REACT_TURNS - 1 and chunks_used:
+                emit("Final turn reached — composing answer from retrieved policy...")
                 print(f"[REASONING] Last turn reached with chunks available — forcing Answer")
                 force_prompt = (
                     f"You have retrieved {len(chunks_used)} policy chunks. "
@@ -347,8 +373,19 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
                 action, action_input, user_id, chunks_used, retrieval_count
             )
             messages.append({"role": "user", "content": f"Observation: {observation}"})
-            
-    # Max turns reached without an answer
+        else:
+            print(f"[REASONING] No action parsed. Raw response:\n{response[:300]}")
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Your last response did not contain a valid Action. "
+                    "Remember: every Action must be on a single line like this:\n"
+                    "Action: tool_name: your input here\n"
+                    "Use an Action or provide your final Answer."
+                )
+            })
+
+    emit("Max reasoning steps reached...")
     print(f"[REASONING] Max turns reached without Answer — returning no_info")
     return {
         "situation_facts": situation_facts,
