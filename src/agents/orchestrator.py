@@ -56,7 +56,16 @@ Classify the query into exactly one of these categories:
   - Dress code, conduct, workplace policies
   - Benefits enrollment, open enrollment, qualifying life events
   - Wellness stipend, professional development, EAP
+  - Technology policies, acceptable use of company systems
+  - AI tools policy, approved software, prohibited software
+  - Data handling, confidentiality, acceptable use of technology
+  - Any question about what a specific company tool or software policy says
+  - Any question about whether a specific action is permitted under company policy
+  - Any question about what approval process is required for a workplace action
+  - Any question about what an employee should use instead of a prohibited tool
   - Any question about what a company policy says or covers
+
+When in doubt, classify as "{ROUTE_IN_SCOPE}". It is always better to attempt an HR answer than to incorrectly reject a legitimate policy question.
 
 "{ROUTE_HIGH_STAKES}": Sensitive HR matters requiring human involvement:
   - Harassment, discrimination, hostile work environment

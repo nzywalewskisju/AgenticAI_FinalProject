@@ -120,7 +120,6 @@ Respond only in JSON:
         "escalated": False
     }
 
-
 def run_governance_postcheck(
     session_id: str,
     user_id: str,
@@ -142,12 +141,22 @@ def run_governance_postcheck(
     answer_out = final_answer
     if not compliance_passed:
         flagged = compliance_result.get("flagged_phrases", [])
-        answer_out += (
-            "\n\n---\n"
-            "_Note: This response is for informational purposes only and does not "
-            "constitute legal advice. Please consult with HR or a qualified professional "
-            "for guidance on your specific situation._"
-        )
+        # Only add disclaimer for genuinely sensitive legal topics
+        # Simple factual policy answers do not need a legal disclaimer
+        sensitive_topics = [
+            "termination", "discrimination", "harassment", "fmla",
+            "medical", "disability", "legal", "lawsuit", "attorney",
+            "entitled", "guaranteed", "must by law", "required by law"
+        ]
+        answer_lower = final_answer.lower()
+        is_sensitive = any(topic in answer_lower for topic in sensitive_topics)
+        if is_sensitive:
+            answer_out += (
+                "\n\n---\n"
+                "_Note: This response is for informational purposes only and does not "
+                "constitute legal advice. Please consult with HR or a qualified professional "
+                "for guidance on your specific situation._"
+            )
         print(f"[GOVERNOR] Compliance warning — flagged phrases: {flagged}")
 
     write_audit_log(
