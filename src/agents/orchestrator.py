@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from config import ROUTE_IN_SCOPE, ROUTE_HIGH_STAKES, ROUTE_OUT_OF_SCOPE
 from src.tools.utils import call_llm, safe_json_parse
 from src.memory.session import session_memory
-from src.memory.profile import extract_and_update_profile, get_profile_context_string
+from src.memory.profile import extract_and_update_profile, get_profile_context_string, get_relevant_profile_context, load_profile
 from src.memory.registry import has_documents
 from src.agents.governor import run_governance_precheck, run_governance_postcheck
 from src.agents.reasoning import run_reasoning_agent
@@ -97,6 +97,23 @@ Respond only in JSON: {{"category": "...", "confidence": 0.0, "reasoning": "..."
         reasoning=result.get("reasoning", "")
     )
 
+def _is_followup_query(query: str, session_context: str) -> bool:
+    """
+    Returns True if the query appears to be a follow-up to the prior conversation.
+    Detects pronouns and references that only make sense with prior context.
+    """
+    if not session_context or "No prior" in session_context:
+        return False
+    followup_signals = [
+        "what about", "and also", "what if", "how about",
+        "same question", "follow up", "additionally",
+        "also", "another question", "one more", "what else",
+        "in that case", "given that", "based on that",
+        "can you clarify", "you mentioned", "you said",
+        "it", "that", "this", "those", "they", "them"
+    ]
+    query_lower = query.lower()
+    return any(signal in query_lower for signal in followup_signals)
 
 def run_orchestrator(
     query: str,
@@ -177,7 +194,13 @@ def run_orchestrator(
 
     # ── Step 6: Get session and profile context ────────────────────────────────
     session_context = session_memory.get_context_string(session_id)
-    profile_context = get_profile_context_string(user_id)
+    profile_context = get_relevant_profile_context(user_id, query)
+
+    # Only inject session history if this appears to be a follow-up question
+    if not _is_followup_query(query, session_context):
+        session_context = ""
+
+    augmented_query = query
 
     # ── Step 7: Reasoning + Review loop ───────────────────────────────────────
     retry_count = 0
@@ -197,7 +220,7 @@ def run_orchestrator(
             retry_context = "\n\nPREVIOUS ATTEMPT FEEDBACK:\n" + "\n".join(failure_history)
 
         reasoning_result = run_reasoning_agent(
-            query=query + retry_context,
+            query=augmented_query + retry_context,
             user_id=user_id,
             session_context=session_context,
             profile_context=profile_context,
@@ -263,6 +286,7 @@ def run_orchestrator(
             chunks_used=all_chunks_accumulated,
             is_retry=retry_count > 0
         )
+        print(f"[ORCHESTRATOR] review_result after run_review_agent: {review_result}")
 
         if review_result["passed"]:
             break
@@ -288,6 +312,9 @@ def run_orchestrator(
         }
 
     # ── Step 9: Governor post-check ────────────────────────────────────────────
+    print(f"[ORCHESTRATOR] review_result type: {type(review_result)}")
+    print(f"[ORCHESTRATOR] review_result value: {review_result}")
+    print(f"[ORCHESTRATOR] Answer going to postcheck: '{review_result['answer'][:100]}'")
     step("Running final compliance check...")
     postcheck = run_governance_postcheck(
         session_id=session_id,

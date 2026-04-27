@@ -21,6 +21,8 @@
 
 import re
 import queue
+
+from yaml import emit
 from config import MAX_REACT_TURNS, RERANK_SKIP_THRESHOLD
 from src.tools.utils import call_llm, format_chunks_for_prompt, get_current_date
 from src.tools.retrieval import retrieve_chunks, keyword_search, rerank_results
@@ -36,26 +38,21 @@ grounded in the policy documents you retrieve.
 You follow the ReAct pattern: Thought → Action → PAUSE → Observation → repeat.
 
 RULES:
-- You MUST call check_policy_coverage before calling retrieve_chunks.
-- You MUST call retrieve_chunks or keyword_search on EVERY query — no exceptions.
-- You should retrieve chunks NO MORE THAN TWICE per query.
-- After two retrievals, you MUST produce your Answer using what you have.
-- Do NOT retrieve the same query twice — if retrieve_chunks returns no new chunks, move on.
-- Do NOT call retrieve_chunks more than once on the same or similar topic.
-- You MUST NOT produce an Answer until you have retrieved at least one chunk.
-- You MUST extract the facts of the user's situation before retrieving anything.
-- You MUST apply retrieved policy to the user's specific facts — not just quote the policy.
-- You MUST NOT make up policy details. If you cannot find relevant policy, say so.
-- You MUST NOT use hedging language: never say "typically", "usually", "generally", "I think", "probably".
-- You MUST NOT use AND, OR, or quote operators in search queries — use plain natural language only.
-- If the user's situation is unclear, call request_clarification.
-- - Every factual claim in your answer MUST come from retrieved chunks.
-- If retrieve_chunks returns no results, try keyword_search once with different plain terms.
 - User profile facts are for your reasoning only — NEVER include them in your Answer text.
 - Do not start your answer by restating who the user is or what their role is.
 - Your Answer should address the policy directly without introducing the user's profile.
 - Do not say things like "The user is a data analyst" or "As a [role] at [company]" in your Answer.
-- If keyword_search returns no results, try retrieve_chunks again with simpler terms.
+- Session history is for conversational context only — do NOT apply facts from a previous unrelated question to the current question.
+- If the current question is about a different topic than the previous question, treat it as fresh with no assumed context from prior answers.
+- NEVER apply eligibility criteria, age ranges, or specific numbers from a previous answer to a new unrelated question.
+- Each query is independent. Do NOT carry over facts, eligibility determinations, or policy conclusions from previous questions in the session history.
+- Session history shows you what was asked before — it does not mean prior answers apply to the current question.
+- Each query is independent. Do NOT carry over facts, eligibility determinations, or policy conclusions from previous questions in the session history.
+- Session history shows you what was asked before — it does not mean prior answers apply to the current question.
+- If the current question is about a different topic than the prior question, start fresh with new retrieval.
+- For short or vague queries, expand them before retrieving. Example: "Am I eligible for the professional development fund?" should become "professional development fund eligibility requirements criteria".
+- Always use specific policy terms from the query as your retrieval keywords.
+- For state-specific questions, always include the state name in your retrieval query. Example: California parental leave should retrieve "California CFRA parental leave policy".
 
 SEARCH QUERY FORMAT:
 - Use plain natural language — no quotes, no AND, no OR, no special operators
@@ -313,7 +310,17 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
                 })
                 continue
             emit("Composing answer from retrieved policy...")
-            answer = response.split("Answer:")[-1].strip()
+            raw_answer = response.split("Answer:")[-1].strip()
+            answer_lines = []
+            for line in raw_answer.split("\n"):
+                stripped = line.strip()
+                if (stripped.startswith("Action:") or
+                    stripped.startswith("PAUSE") or
+                    stripped.startswith("Note:") or
+                    stripped.startswith("Thought:")):
+                    break
+                answer_lines.append(line)
+            answer = "\n".join(answer_lines).strip()
             return {
                 "situation_facts": situation_facts,
                 "draft_answer": answer,
@@ -364,7 +371,17 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
                 final_response = call_llm(full_prompt, system_prompt=REASONING_SYSTEM_PROMPT)
 
                 if "Answer:" in final_response:
-                    answer = final_response.split("Answer:")[-1].strip()
+                    raw_answer = final_response.split("Answer:")[-1].strip()
+                    answer_lines = []
+                    for line in raw_answer.split("\n"):
+                        stripped = line.strip()
+                        if (stripped.startswith("Action:") or
+                            stripped.startswith("PAUSE") or
+                            stripped.startswith("Note:") or
+                            stripped.startswith("Thought:")):
+                            break
+                        answer_lines.append(line)
+                    answer = "\n".join(answer_lines).strip()
                     return {
                         "situation_facts": situation_facts,
                         "draft_answer": answer,

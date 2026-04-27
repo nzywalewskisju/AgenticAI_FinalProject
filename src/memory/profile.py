@@ -73,6 +73,8 @@ Use only the keys that are present. Do not invent keys."""
     newly_added = []
 
     for key, value in new_facts.items():
+        if value is None or str(value).strip().lower() in ("none", "", "null", "n/a"):
+            continue
         if key not in profile["facts"] or profile["facts"][key] != value:
             profile["facts"][key] = value
             profile["last_updated"] = datetime.utcnow().isoformat()
@@ -124,3 +126,53 @@ def clear_profile(user_id: str) -> None:
     profile = load_profile(user_id)
     profile["facts"] = {}
     save_profile(user_id, profile)
+
+def get_relevant_profile_context(user_id: str, query: str) -> str:
+    """
+    Returns only the profile facts relevant to the current query.
+    Prevents facts from unrelated prior questions contaminating new answers.
+    """
+    profile = load_profile(user_id)
+    facts = profile.get("facts", {})
+
+    if not facts:
+        return "No profile information known about this user yet."
+
+    query_lower = query.lower()
+
+    # Facts that are always relevant regardless of query topic
+    always_relevant = ["role", "employment_type", "employment_duration", "department"]
+
+    # Location only relevant for state-specific policy questions
+    location_keywords = [
+        "california", "state", "new york", "washington", "illinois",
+        "georgia", "leave", "fmla", "parental", "sick", "pto",
+        "family leave", "disability", "accommodation"
+    ]
+    location_relevant = any(k in query_lower for k in location_keywords)
+
+    # Ongoing situations only relevant for related queries
+    situation_keywords = [
+        "leave", "pip", "complaint", "fmla", "accommodation",
+        "performance", "investigation", "grievance"
+    ]
+    situation_relevant = any(k in query_lower for k in situation_keywords)
+
+    relevant_facts = {}
+    for key, value in facts.items():
+        if key in always_relevant:
+            relevant_facts[key] = value
+        elif key == "location" and location_relevant:
+            relevant_facts[key] = value
+        elif key == "ongoing_situations" and situation_relevant:
+            relevant_facts[key] = value
+
+    if not relevant_facts:
+        return "No relevant profile information for this query."
+
+    lines = ["Known facts about this user:"]
+    for key, value in relevant_facts.items():
+        label = key.replace("_", " ").title()
+        lines.append(f"  - {label}: {value}")
+
+    return "\n".join(lines)
