@@ -137,23 +137,34 @@ Respond only in JSON: {"passed": true/false, "reason": "explanation"}"""
 
 def inject_citations(answer: str, chunks_used: list) -> str:
     """
-    Appends a citations section to the answer listing every source document and section used.
-    Returns the answer with citations appended.
+    Appends citations for chunks that are actually relevant to the answer.
+    Filters out chunks that were retrieved but not used in reasoning.
     """
     if not chunks_used:
         return answer
 
     citations = format_chunks_for_citation(chunks_used)
     seen = set()
-    unique_citations = []
+    relevant_citations = []
+
     for c in citations:
         key = f"{c['document_name']}|{c['section_header']}"
         if key not in seen:
+            # Only include citations with meaningful section headers
+            section = c.get("section_header", "")
+            if any(skip in section for skip in [
+                "Page ", "Confidential", "NEXARION SOLUTIONS",
+                "Effective Date", "Version", "Table of Contents"
+            ]):
+                continue
             seen.add(key)
-            unique_citations.append(c)
+            relevant_citations.append(c)
+
+    if not relevant_citations:
+        return answer
 
     citation_lines = ["\n\n---\n**Sources:**"]
-    for i, c in enumerate(unique_citations, 1):
+    for i, c in enumerate(relevant_citations, 1):
         citation_lines.append(f"{i}. {c['document_name']} — {c['section_header']}")
 
     return answer + "\n".join(citation_lines)

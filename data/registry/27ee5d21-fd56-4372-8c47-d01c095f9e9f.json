@@ -1,0 +1,30 @@
+[
+  {
+    "file_path": "C:/Users/nzywa/Desktop/AgenticAI_FinalProject/data/hr_docs/Nexarion_2025_Benefits_Guide.pdf",
+    "file_name": "Nexarion_2025_Benefits_Guide.pdf",
+    "file_hash": "f7b7c154b6ae0260ce846d707f48b8f6",
+    "upload_timestamp": "2026-04-28T21:52:30.196416",
+    "chunk_count": 44
+  },
+  {
+    "file_path": "C:/Users/nzywa/Desktop/AgenticAI_FinalProject/data/hr_docs/Nexarion_Remote_Work_Technology_Supplement.pdf",
+    "file_name": "Nexarion_Remote_Work_Technology_Supplement.pdf",
+    "file_hash": "362d478c7a609da21689b2a88f01eac2",
+    "upload_timestamp": "2026-04-28T21:52:30.205393",
+    "chunk_count": 37
+  },
+  {
+    "file_path": "C:/Users/nzywa/Desktop/AgenticAI_FinalProject/data/hr_docs/Nexarion_Solutions_Employee_Handbook (1).pdf",
+    "file_name": "Nexarion_Solutions_Employee_Handbook (1).pdf",
+    "file_hash": "403399bc2c8ec7f3068b0fc0b31e8eaf",
+    "upload_timestamp": "2026-04-28T21:52:30.215546",
+    "chunk_count": 106
+  },
+  {
+    "file_path": "C:/Users/nzywa/Desktop/AgenticAI_FinalProject/data/hr_docs/Nexarion_State_Policy_Addendum.pdf",
+    "file_name": "Nexarion_State_Policy_Addendum.pdf",
+    "file_hash": "80ef64e573e38564565942eb1719b176",
+    "upload_timestamp": "2026-04-28T21:52:30.230393",
+    "chunk_count": 35
+  }
+]
