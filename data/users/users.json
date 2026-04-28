@@ -38,5 +38,13 @@
     "security_question": "What is your mother's maiden name?",
     "security_answer_hash": "$2b$12$GZ6p8OuBvWwk0duKCE6xwOZdhn6QmYt.cyxoKLG5cfPwIoL5cVZFW",
     "created_at": "2026-04-23T18:12:24.865711"
+  },
+  {
+    "user_id": "a6218b2a-f59d-4f99-9466-1d455b46b0be",
+    "username": "nickzz",
+    "password_hash": "$2b$12$4MTjoB9kVEbtQ0a5Ww9DieuQttst41CfUnzEV2NV0JF91kyk4Su6a",
+    "security_question": "What is your mother's maiden name?",
+    "security_answer_hash": "$2b$12$ee4jG.1XoyA7EFRaTd.qpeWxzAFjJLiZCSRfHIPzSpHtTOgb8NUqO",
+    "created_at": "2026-04-28T20:29:30.159557"
   }
 ]

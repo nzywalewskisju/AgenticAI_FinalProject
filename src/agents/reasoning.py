@@ -38,29 +38,39 @@ grounded in the policy documents you retrieve.
 You follow the ReAct pattern: Thought → Action → PAUSE → Observation → repeat.
 
 RULES:
-- User profile facts are for your reasoning only — NEVER include them in your Answer text.
-- Do not start your answer by restating who the user is or what their role is.
-- Your Answer should address the policy directly without introducing the user's profile.
-- Do not say things like "The user is a data analyst" or "As a [role] at [company]" in your Answer.
-- Session history is for conversational context only — do NOT apply facts from a previous unrelated question to the current question.
-- If the current question is about a different topic than the previous question, treat it as fresh with no assumed context from prior answers.
-- NEVER apply eligibility criteria, age ranges, or specific numbers from a previous answer to a new unrelated question.
-- Each query is independent. Do NOT carry over facts, eligibility determinations, or policy conclusions from previous questions in the session history.
-- Session history shows you what was asked before — it does not mean prior answers apply to the current question.
-- Each query is independent. Do NOT carry over facts, eligibility determinations, or policy conclusions from previous questions in the session history.
-- Session history shows you what was asked before — it does not mean prior answers apply to the current question.
-- If the current question is about a different topic than the prior question, start fresh with new retrieval.
-- For short or vague queries, expand them before retrieving. Example: "Am I eligible for the professional development fund?" should become "professional development fund eligibility requirements criteria".
-- Always use specific policy terms from the query as your retrieval keywords.
-- For state-specific questions, always include the state name in your retrieval query. Example: California parental leave should retrieve "California CFRA parental leave policy".
-- When a query mentions the Professional Development Fund, ALWAYS retrieve section 7.7 specifically using the query "professional development fund eligibility covered expenses excluded".
-- When a query mentions tuition, MBA, or degree programs, ALWAYS retrieve using "tuition reimbursement program degree MBA" to find the correct policy.
+- You MUST call check_policy_coverage before calling retrieve_chunks.
+- You MUST call retrieve_chunks or keyword_search on EVERY query — no exceptions.
+- You MUST NOT produce an Answer until you have retrieved at least one chunk.
+- You MUST apply retrieved policy to the user's specific facts — not just quote the policy.
+- You MUST NOT make up policy details. If you cannot find relevant policy, say so.
+- You MUST NOT use hedging language: never say "typically", "usually", "generally", "I think", "probably".
+- You MUST NOT use AND, OR, or quote operators in search queries — use plain natural language only.
+- If the user's situation is unclear, call request_clarification.
+- Every factual claim in your answer MUST come from retrieved chunks.
+- If retrieve_chunks returns no results, try keyword_search with different plain terms.
+- ALWAYS try keyword_search after retrieve_chunks to catch content semantic search may miss.
+
+- User profile facts are for your reasoning only — never mention them in your Answer text.
+- Your Answer should address the policy directly without restating who the user is.
+- Each query is independent — never carry over eligibility determinations or policy conclusions from a previous question.
+- Session history provides conversational context only — prior answers do not apply to new unrelated questions.
+
+- For short or vague queries, expand them before retrieving using specific policy terms.
+- For state-specific questions, always include the state name in your retrieval query.
+- When a query mentions Professional Development Fund, tuition, MBA, or degree programs, retrieve using "professional development fund eligibility excluded degree programs".
 - Never conflate the Professional Development Fund with the Tuition Reimbursement Program — they are separate programs with different rules.
-- When a query mentions MBA, degree program, or tuition, you MUST retrieve chunks using "tuition reimbursement program degree MBA excluded" before answering.
-- When previous attempt feedback mentions a contradiction or wrong program, change your retrieval query completely — do not repeat the same search.
-- If feedback says "Policy contradiction detected", retrieve the specific policy that was contradicted using different search terms.
-- If the query mentions MBA, degree, tuition, or "not covered", you MUST call keyword_search with the term "degree programs not covered" as one of your searches.
-- keyword_search with exact terms finds content that semantic search misses due to poor section headers.
+- When previous attempt feedback mentions a contradiction, change your retrieval query completely and search for the specific policy that was contradicted.
+
+- When a retrieved chunk says a policy is "effective January 1, 2025" it means it is currently active — never describe it as a future benefit.
+- Never tell a user a benefit "will be available" if the retrieved chunk says it is already effective.
+- When you have retrieved chunks, base your Answer ONLY on those chunks — never use training data to fill gaps.
+- If retrieved chunks contain a specific dollar amount, date, or number that answers the query, state it exactly.
+- If the chunks do not contain the answer, say "the retrieved policy does not specify this" rather than guessing.
+- Never describe enrollment portals, forms, or deadlines unless they are explicitly stated in a retrieved chunk.
+- NEVER reference chunks by number in your Answer. Do not say "policy chunk [1]" or "Source:" inline.
+
+- The current date is provided at the top of every query. Always use that date when reasoning about contribution limits, deadlines, or effective dates.
+- Never assume a year from your training data — always use the date provided in the query.
 
 SEARCH QUERY FORMAT:
 - Use plain natural language — no quotes, no AND, no OR, no special operators
@@ -106,13 +116,15 @@ def _execute_action(
     action_input: str,
     user_id: str,
     chunks_used: list,
-    retrieval_count: list
+    retrieval_count: list,
+    original_query: str = ""
 ) -> str:
     """
     Executes a named action and returns the observation string.
     Updates chunks_used in place when retrieval actions return chunks.
     Uses text-based deduplication to prevent the same chunk being added multiple times.
     retrieval_count is a single-element list used as a mutable counter.
+    original_query is the original user query used for context-aware auto-triggers.
     """
     action = action.strip().lower()
 
@@ -160,11 +172,16 @@ def _execute_action(
                 existing_texts.add(c["text"])
                 new_count += 1
 
-        # Auto keyword search for exclusion language when PD Fund is mentioned
         action_lower = action_input.lower()
+        query_lower = original_query.lower()
+
+        # Auto keyword search for MBA/degree exclusion
+        pd_fund_query = any(term in query_lower for term in [
+            "professional development", "pd fund", "development fund"
+        ])
         if any(term in action_lower for term in [
             "professional development", "pd fund", "mba", "degree", "tuition"
-        ]):
+        ]) or pd_fund_query:
             from src.tools.retrieval import keyword_search as kw_search
             exclusion_chunks = kw_search("degree programs not covered MBA excluded", user_id)
             for c in exclusion_chunks:
@@ -178,7 +195,7 @@ def _execute_action(
         # Auto keyword search for pet insurance queries
         if any(term in action_lower for term in [
             "pet", "dog", "cat", "animal", "nationwide", "voluntary benefits"
-        ]):
+        ]) or any(term in query_lower for term in ["pet", "dog", "cat", "parrot", "animal"]):
             print(f"[REASONING] Auto-triggering pet insurance keyword search")
             from src.tools.retrieval import keyword_search as kw_search
             pet_chunks = kw_search("pet insurance dogs cats nationwide voluntary benefits", user_id)
@@ -189,6 +206,30 @@ def _execute_action(
                     new_count += 1
             if pet_chunks:
                 print(f"[REASONING] Auto-added {len(pet_chunks)} pet insurance chunks")
+
+        # Auto keyword search for SECURE 2.0 enhanced catch-up contribution
+        is_401k_age_query = (
+            any(term in query_lower for term in [
+                "401k", "401(k)", "contribution", "catch-up", "catchup"
+            ]) and
+            any(age in query_lower for age in ["60", "61", "62", "63", "age"])
+        )
+        if is_401k_age_query or any(term in action_lower for term in [
+            "401k", "catch-up", "catchup", "secure", "contribution limit"
+        ]):
+            from src.tools.retrieval import keyword_search as kw_search
+            secure_chunks = kw_search(
+                "SECURE 2.0 employees aged 60 61 62 63 enhanced catch-up 11250 effective January 2025", user_id
+            )
+            for c in secure_chunks:
+                if c["text"] not in existing_texts:
+                    chunks_used.append(c)
+                    existing_texts.add(c["text"])
+                    new_count += 1
+            if secure_chunks:
+                print(f"[REASONING] Auto-added {len(secure_chunks)} SECURE 2.0 chunks")
+                for c in secure_chunks:
+                    print(f"[REASONING] SECURE chunk: {c['text'][:200]}")
 
         return f"Retrieved {len(chunks)} chunks ({new_count} new):\n\n{format_chunks_for_prompt(chunks)}"
 
@@ -430,7 +471,8 @@ Retrieve NO MORE THAN TWICE — after two retrievals you must produce your Answe
                     }
 
             observation = _execute_action(
-                action, action_input, user_id, chunks_used, retrieval_count
+                action, action_input, user_id, chunks_used, retrieval_count,
+                original_query=query
             )
             messages.append({"role": "user", "content": f"Observation: {observation}"})
         else:

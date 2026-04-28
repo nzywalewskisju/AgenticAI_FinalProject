@@ -164,12 +164,13 @@ def run_review_agent(
     query: str,
     situation_facts: str,
     chunks_used: list,
-    is_retry: bool = False
+    is_retry: bool = False,
+    had_contradiction: bool = False
 ) -> dict:
     """
     Runs all review checks.
-    Only grounding is a hard block — all other checks are non-blocking warnings.
-    Grounding threshold is lower on retries to avoid infinite rejection loops.
+    Grounding is a hard block on first attempt, non-blocking on retry after contradiction.
+    Alignment blocks on contradictions and factual errors on first attempt only.
     Returns {passed: bool, answer: str, grounding_score: float, failure_reason: str}
     """
     if not chunks_used:
@@ -207,26 +208,28 @@ def run_review_agent(
     for name, result in results.items():
         print(f"[REVIEW] {name}: passed={result.get('passed')} score={result.get('score', 'N/A')} reason={result.get('reason', '')[:120]}")
 
-    # Grounding is the only hard block
+    # Grounding — hard block on first attempt, non-blocking after contradiction retry
     grounding = results.get("grounding", {"passed": False, "score": 0.0, "reason": "Check did not run"})
-    if not grounding["passed"]:
+    if not grounding["passed"] and not (is_retry and had_contradiction):
         return {
             "passed": False,
             "answer": "",
             "grounding_score": grounding["score"],
             "failure_reason": f"Grounding check failed (score {grounding['score']:.2f}): {grounding['reason']}"
         }
+    elif not grounding["passed"]:
+        print(f"[REVIEW] Grounding warning on retry after contradiction (non-blocking): score={grounding['score']:.2f}")
 
-    # Alignment — blocking for contradictions, warning for minor issues
+    # Alignment — blocking for contradictions and factual errors on first attempt only
     alignment = results.get("alignment", {"passed": True, "reason": ""})
     if not alignment["passed"]:
         reason = alignment.get("reason", "").lower()
-        # Block if it's a clear contradiction or wrong program confusion
         is_contradiction = any(word in reason for word in [
             "contradict", "explicitly excludes", "not covered",
-            "wrong program", "confuses", "opposite", "prohibit"
+            "wrong program", "confuses", "opposite", "prohibit",
+            "incorrectly states", "inaccurate", "incorrect"
         ])
-        if is_contradiction:
+        if is_contradiction and not is_retry:
             return {
                 "passed": False,
                 "answer": "",
@@ -236,10 +239,12 @@ def run_review_agent(
         else:
             print(f"[REVIEW] Alignment warning (non-blocking): {alignment['reason']}")
 
+    # Tone — non-blocking warning
     tone = results.get("tone", {"passed": True, "reason": ""})
     if not tone["passed"]:
         print(f"[REVIEW] Tone warning (non-blocking): {tone['reason']}")
 
+    # Applicability — non-blocking warning
     applicability = results.get("applicability", {"passed": True, "reason": ""})
     if not applicability["passed"]:
         print(f"[REVIEW] Applicability warning (non-blocking): {applicability['reason']}")

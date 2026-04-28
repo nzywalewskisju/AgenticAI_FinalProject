@@ -15,7 +15,7 @@ import uuid
 import queue
 from pydantic import BaseModel
 from config import ROUTE_IN_SCOPE, ROUTE_HIGH_STAKES, ROUTE_OUT_OF_SCOPE
-from src.tools.utils import call_llm, safe_json_parse
+from src.tools.utils import call_llm, get_current_date, safe_json_parse
 from src.memory.session import session_memory
 from src.memory.profile import extract_and_update_profile, get_profile_context_string, get_relevant_profile_context, load_profile
 from src.memory.registry import has_documents
@@ -200,7 +200,9 @@ def run_orchestrator(
     if not _is_followup_query(query, session_context):
         session_context = ""
 
-    augmented_query = query
+    from src.tools.utils import get_current_date
+    current_date = get_current_date()
+    augmented_query = f"{query}\n\nToday's date: {current_date}. All policy questions refer to the current year."
 
     # ── Step 7: Reasoning + Review loop ───────────────────────────────────────
     retry_count = 0
@@ -284,7 +286,8 @@ def run_orchestrator(
             query=query,
             situation_facts=reasoning_result["situation_facts"],
             chunks_used=all_chunks_accumulated,
-            is_retry=retry_count > 0
+            is_retry=retry_count > 0,
+            had_contradiction="contradiction" in " ".join(failure_history).lower()
         )
         print(f"[ORCHESTRATOR] review_result after run_review_agent: {review_result}")
 
