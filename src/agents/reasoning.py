@@ -53,6 +53,14 @@ RULES:
 - For short or vague queries, expand them before retrieving. Example: "Am I eligible for the professional development fund?" should become "professional development fund eligibility requirements criteria".
 - Always use specific policy terms from the query as your retrieval keywords.
 - For state-specific questions, always include the state name in your retrieval query. Example: California parental leave should retrieve "California CFRA parental leave policy".
+- When a query mentions the Professional Development Fund, ALWAYS retrieve section 7.7 specifically using the query "professional development fund eligibility covered expenses excluded".
+- When a query mentions tuition, MBA, or degree programs, ALWAYS retrieve using "tuition reimbursement program degree MBA" to find the correct policy.
+- Never conflate the Professional Development Fund with the Tuition Reimbursement Program — they are separate programs with different rules.
+- When a query mentions MBA, degree program, or tuition, you MUST retrieve chunks using "tuition reimbursement program degree MBA excluded" before answering.
+- When previous attempt feedback mentions a contradiction or wrong program, change your retrieval query completely — do not repeat the same search.
+- If feedback says "Policy contradiction detected", retrieve the specific policy that was contradicted using different search terms.
+- If the query mentions MBA, degree, tuition, or "not covered", you MUST call keyword_search with the term "degree programs not covered" as one of your searches.
+- keyword_search with exact terms finds content that semantic search misses due to poor section headers.
 
 SEARCH QUERY FORMAT:
 - Use plain natural language — no quotes, no AND, no OR, no special operators
@@ -128,16 +136,16 @@ def _execute_action(
         return f"Policy coverage check: {result['reason']} Covered: {result['covered']}"
 
     elif action == "retrieve_chunks":
-        if retrieval_count[0] >= 2:
+        if retrieval_count[0] >= 3:
             return (
                 "Maximum retrievals reached. "
-                "You have already retrieved chunks twice. "
+                "You have already retrieved chunks three times. "
                 "You MUST now produce your Answer using the chunks you already have. "
                 "Do not call retrieve_chunks or keyword_search again."
             )
         retrieval_count[0] += 1
         chunks = retrieve_chunks(action_input, user_id)
-        print(f"[REASONING] Retrieved {len(chunks)} chunks (retrieval {retrieval_count[0]}/2)")
+        print(f"[REASONING] Retrieved {len(chunks)} chunks (retrieval {retrieval_count[0]}/3)")
         if not chunks:
             return (
                 "No relevant chunks found for this query. "
@@ -151,10 +159,41 @@ def _execute_action(
                 chunks_used.append(c)
                 existing_texts.add(c["text"])
                 new_count += 1
+
+        # Auto keyword search for exclusion language when PD Fund is mentioned
+        action_lower = action_input.lower()
+        if any(term in action_lower for term in [
+            "professional development", "pd fund", "mba", "degree", "tuition"
+        ]):
+            from src.tools.retrieval import keyword_search as kw_search
+            exclusion_chunks = kw_search("degree programs not covered MBA excluded", user_id)
+            for c in exclusion_chunks:
+                if c["text"] not in existing_texts:
+                    chunks_used.append(c)
+                    existing_texts.add(c["text"])
+                    new_count += 1
+            if exclusion_chunks:
+                print(f"[REASONING] Auto-added {len(exclusion_chunks)} exclusion chunks")
+
+        # Auto keyword search for pet insurance queries
+        if any(term in action_lower for term in [
+            "pet", "dog", "cat", "animal", "nationwide", "voluntary benefits"
+        ]):
+            print(f"[REASONING] Auto-triggering pet insurance keyword search")
+            from src.tools.retrieval import keyword_search as kw_search
+            pet_chunks = kw_search("pet insurance dogs cats nationwide voluntary benefits", user_id)
+            for c in pet_chunks:
+                if c["text"] not in existing_texts:
+                    chunks_used.append(c)
+                    existing_texts.add(c["text"])
+                    new_count += 1
+            if pet_chunks:
+                print(f"[REASONING] Auto-added {len(pet_chunks)} pet insurance chunks")
+
         return f"Retrieved {len(chunks)} chunks ({new_count} new):\n\n{format_chunks_for_prompt(chunks)}"
 
     elif action == "keyword_search":
-        if retrieval_count[0] >= 2:
+        if retrieval_count[0] >= 3:
             return (
                 "Maximum retrievals reached. "
                 "You MUST now produce your Answer using the chunks you already have. "
@@ -162,7 +201,7 @@ def _execute_action(
             )
         retrieval_count[0] += 1
         chunks = keyword_search(action_input, user_id)
-        print(f"[REASONING] Keyword search returned {len(chunks)} chunks (retrieval {retrieval_count[0]}/2)")
+        print(f"[REASONING] Keyword search returned {len(chunks)} chunks (retrieval {retrieval_count[0]}/3)")
         if not chunks:
             return (
                 "No results found for keyword search. "

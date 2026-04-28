@@ -24,7 +24,7 @@ from src.agents.reasoning import run_reasoning_agent
 from src.agents.review import run_review_agent
 
 
-MAX_REVIEW_RETRIES = 2
+MAX_REVIEW_RETRIES = 3
 
 
 class RoutingDecision(BaseModel):
@@ -296,11 +296,20 @@ def run_orchestrator(
 
     # ── Step 8: Handle failure after all retries ───────────────────────────────
     if not review_result or not review_result["passed"]:
-        no_info_answer = (
-            "I was unable to find sufficient policy information to give you a reliable answer on this topic. "
-            "This may mean the relevant policy is not in the documents you've uploaded. "
-            "Would you like to upload additional HR documents that might cover this topic?"
-        )
+        failure_reason = review_result["failure_reason"] if review_result else ""
+        if "contradiction" in failure_reason.lower():
+            no_info_answer = (
+                "I was unable to produce a verified answer for this question. "
+                "The policy documents contain specific rules that my initial answer did not correctly reflect. "
+                "Please contact HR directly for accurate guidance on this topic."
+            )
+        else:
+            no_info_answer = (
+                "I was unable to find sufficient policy information to give you a reliable answer on this topic. "
+                "This may mean the relevant policy is not in the documents you've uploaded. "
+                "Would you like to upload additional HR documents that might cover this topic?"
+            )
+            
         return {
             "answer": no_info_answer,
             "status": "no_info",

@@ -85,7 +85,7 @@ def chunk_document(document: dict) -> list[dict]:
     # fragments from becoming isolated chunks that cannot be retrieved
     merged_sections = []
     for header, section_text in sections:
-        if len(section_text.strip()) < 150 and merged_sections:
+        if len(section_text.strip()) < 300 and merged_sections:
             # Merge into previous section instead of creating a standalone chunk
             prev_header, prev_text = merged_sections[-1]
             merged_sections[-1] = (prev_header, prev_text + "\n" + section_text)

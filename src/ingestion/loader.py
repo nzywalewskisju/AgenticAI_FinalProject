@@ -17,10 +17,9 @@ def _detect_and_mark_headings(text: str) -> str:
     """
     Scans text for likely heading patterns and prefixes them with ##
     so the chunker can detect section boundaries.
-    Patterns: ALL CAPS lines, lines ending with no punctuation under 80 chars,
-    numbered sections like 1. or 1.2 or Section 4
-    Excludes: table fragments, lines with special characters, partial sentences
+    Only marks lines that are clearly section headings — not table rows or fragments.
     """
+    import re
     lines = text.split("\n")
     marked = []
     for line in lines:
@@ -29,7 +28,7 @@ def _detect_and_mark_headings(text: str) -> str:
             marked.append(line)
             continue
 
-        # Skip likely table fragments — lines ending mid-sentence or with special chars
+        # Skip likely table fragments
         is_table_fragment = (
             stripped.endswith("|") or
             stripped.startswith("|") or
@@ -39,27 +38,24 @@ def _detect_and_mark_headings(text: str) -> str:
             stripped.endswith("(") or
             stripped.endswith(",") or
             stripped.endswith("%") or
-            len(stripped) < 6
+            stripped.endswith("/month") or
+            stripped.endswith("/year") or
+            stripped.endswith("$") or
+            stripped.startswith("$") or
+            len(stripped) < 8 or
+            stripped.replace(".", "").replace(",", "").replace("$", "").replace("/", "").replace("-", "").replace(" ", "").isdigit()
         )
 
         if is_table_fragment:
             marked.append(line)
             continue
 
-        is_all_caps = stripped.isupper() and len(stripped) > 3
-        is_numbered = (
-            bool(__import__("re").match(r"^\d+(\.\d+)?\s+\w", stripped))
-            and len(stripped) < 80
-        )
-        is_section = stripped.lower().startswith("section")
-        is_short_no_punct = (
-            len(stripped) < 80
-            and not stripped[-1] in ".,:;?!)(|%"
-            and stripped[0].isupper()
-            and len(stripped.split()) >= 2
-        )
+        # Only mark as heading if it matches strong structural patterns
+        is_numbered = bool(re.match(r"^\d+(\.\d+)?\s+[A-Z]", stripped)) and len(stripped) < 80
+        is_section_keyword = stripped.lower().startswith("section")
+        is_all_caps_meaningful = stripped.isupper() and len(stripped) > 6 and len(stripped) < 60 and len(stripped.split()) >= 2
 
-        if is_all_caps or is_numbered or is_section or is_short_no_punct:
+        if is_numbered or is_section_keyword or is_all_caps_meaningful:
             marked.append(f"## {stripped}")
         else:
             marked.append(line)

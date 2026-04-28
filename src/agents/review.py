@@ -54,19 +54,23 @@ Respond only in JSON: {"score": 0.0, "reason": "explanation"}"""
 
 
 def check_policy_alignment(answer: str, chunks_used: list) -> dict:
-    """
-    Checks that the answer accurately represents what the policy says.
-    Catches cases where retrieval was correct but paraphrasing was inaccurate.
-    Returns {passed: bool, reason: str}
-    """
     chunks_text = "\n\n".join(
         f"[{i+1}] {c.get('text', '')}" for i, c in enumerate(chunks_used)
     )
 
     system_prompt = """You are a policy alignment checker for an HR assistant.
 Check whether the answer accurately represents what the source policy documents say.
-Look for: exaggerated entitlements, softened obligations, omitted conditions,
-or changed language that alters the meaning (e.g. "may be eligible" → "are entitled to").
+Look for:
+1. Exaggerated entitlements — answer claims more than policy states
+2. Softened obligations — answer understates requirements
+3. Omitted conditions — answer misses important eligibility restrictions
+4. Changed language — e.g. "may be eligible" becomes "are entitled to"
+5. CONTRADICTIONS — answer states something the policy explicitly prohibits or excludes
+   Example: policy says "MBA programs are NOT covered" but answer advises on MBA reimbursement
+6. Wrong program — answer confuses two different programs with similar names
+   Example: confusing Professional Development Fund with Tuition Reimbursement Program
+If the answer discusses a topic that the retrieved chunks explicitly exclude or prohibit,
+that is a critical alignment failure.
 Respond only in JSON: {"passed": true/false, "reason": "explanation"}"""
 
     prompt = f"ANSWER:\n{answer}\n\nSOURCE POLICY:\n{chunks_text}"
@@ -213,10 +217,24 @@ def run_review_agent(
             "failure_reason": f"Grounding check failed (score {grounding['score']:.2f}): {grounding['reason']}"
         }
 
-    # All other checks are non-blocking warnings
+    # Alignment — blocking for contradictions, warning for minor issues
     alignment = results.get("alignment", {"passed": True, "reason": ""})
     if not alignment["passed"]:
-        print(f"[REVIEW] Alignment warning (non-blocking): {alignment['reason']}")
+        reason = alignment.get("reason", "").lower()
+        # Block if it's a clear contradiction or wrong program confusion
+        is_contradiction = any(word in reason for word in [
+            "contradict", "explicitly excludes", "not covered",
+            "wrong program", "confuses", "opposite", "prohibit"
+        ])
+        if is_contradiction:
+            return {
+                "passed": False,
+                "answer": "",
+                "grounding_score": grounding["score"],
+                "failure_reason": f"Policy contradiction detected: {alignment['reason']}"
+            }
+        else:
+            print(f"[REVIEW] Alignment warning (non-blocking): {alignment['reason']}")
 
     tone = results.get("tone", {"passed": True, "reason": ""})
     if not tone["passed"]:
