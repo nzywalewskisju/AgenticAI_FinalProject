@@ -24,6 +24,9 @@ import os
 import bcrypt
 from config import USERS_FILE, SECURITY_QUESTIONS
 
+import platform
+IS_MAC = platform.system() == "Darwin"
+
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 
@@ -148,10 +151,16 @@ class LoginWindow:
 
     def _btn(self, parent, text, command, primary=True):
         bg = ACCENT if primary else BG_INPUT
-        return tk.Button(parent, text=text, command=command,
-                         font=FONT_LABEL, fg=TEXT, bg=bg,
-                         activebackground=ACCENT_DIM, activeforeground=TEXT,
-                         relief="flat", cursor="hand2", pady=8)
+        if IS_MAC:
+            return tk.Button(parent, text=text, command=command,
+                            font=FONT_LABEL, bg=bg,
+                            activebackground=ACCENT_DIM,
+                            relief="flat", cursor="hand2", pady=8)
+        else:
+            return tk.Button(parent, text=text, command=command,
+                            font=FONT_LABEL, fg=TEXT, bg=bg,
+                            activebackground=ACCENT_DIM, activeforeground=TEXT,
+                            relief="flat", cursor="hand2", pady=8)
 
     def _build_login_view(self):
         self._clear()
@@ -411,54 +420,71 @@ class MainWindow:
 
     def _build_sidebar(self, parent):
         tk.Label(parent, text="Documents", font=FONT_LABEL,
-                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(16, 4))
+                fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(16, 4))
 
+        add_btn_kwargs = dict(font=FONT_SMALL, bg=ACCENT,
+                            activebackground=ACCENT_DIM, relief="flat",
+                            cursor="hand2", pady=6)
+        if not IS_MAC:
+            add_btn_kwargs["fg"] = TEXT
         tk.Button(parent, text="+ Add Documents",
-                  command=self._pick_files,
-                  font=FONT_SMALL, fg=TEXT, bg=ACCENT,
-                  activebackground=ACCENT_DIM, relief="flat",
-                  cursor="hand2", pady=6).pack(fill="x", padx=16, pady=4)
+                command=self._pick_files,
+                **add_btn_kwargs).pack(fill="x", padx=16, pady=4)
 
+        ingest_btn_kwargs = dict(font=FONT_SMALL, bg=BG_INPUT,
+                                activebackground=ACCENT_DIM, relief="flat",
+                                cursor="hand2", pady=6, state="disabled")
+        if not IS_MAC:
+            ingest_btn_kwargs["fg"] = TEXT
         self.ingest_btn = tk.Button(parent, text="Ingest Selected Files",
                                     command=self._run_ingestion,
-                                    font=FONT_SMALL, fg=TEXT, bg=BG_INPUT,
-                                    activebackground=ACCENT_DIM, relief="flat",
-                                    cursor="hand2", pady=6, state="disabled")
+                                    **ingest_btn_kwargs)
         self.ingest_btn.pack(fill="x", padx=16, pady=2)
 
         self.selected_label = tk.Label(parent, text="No files selected.",
-                                       font=FONT_SMALL, fg=TEXT_DIM,
-                                       bg=BG_PANEL, wraplength=220, justify="left")
+                                    font=FONT_SMALL, fg=TEXT_DIM,
+                                    bg=BG_PANEL, wraplength=220, justify="left")
         self.selected_label.pack(anchor="w", padx=16, pady=4)
 
         tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
         tk.Label(parent, text="Loaded Documents", font=FONT_LABEL,
-                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(0, 4))
+                fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(0, 4))
 
         self.docs_frame = tk.Frame(parent, bg=BG_PANEL)
         self.docs_frame.pack(fill="x", padx=16)
 
+        clear_all_kwargs = dict(font=FONT_SMALL, bg=BG_PANEL,
+                                relief="flat", cursor="hand2",
+                                activebackground=BG_PANEL)
+        if not IS_MAC:
+            clear_all_kwargs["fg"] = ERROR
+            clear_all_kwargs["activeforeground"] = TEXT
+        else:
+            clear_all_kwargs["fg"] = ERROR
         tk.Button(parent, text="Clear All Documents",
-                  command=self._clear_all_docs,
-                  font=FONT_SMALL, fg=ERROR, bg=BG_PANEL,
-                  relief="flat", cursor="hand2",
-                  activeforeground=TEXT, activebackground=BG_PANEL
-                  ).pack(anchor="w", padx=16, pady=4)
+                command=self._clear_all_docs,
+                **clear_all_kwargs).pack(anchor="w", padx=16, pady=4)
 
         tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
         tk.Label(parent, text="My Profile", font=FONT_LABEL,
-                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(0, 4))
+                fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(0, 4))
 
         self.profile_frame = tk.Frame(parent, bg=BG_PANEL)
         self.profile_frame.pack(fill="x", padx=16)
 
         tk.Frame(parent, bg=BORDER, height=1).pack(fill="x", padx=16, pady=8)
+
+        clear_session_kwargs = dict(font=FONT_SMALL, bg=BG_PANEL,
+                                    relief="flat", cursor="hand2",
+                                    activebackground=BG_PANEL)
+        if not IS_MAC:
+            clear_session_kwargs["fg"] = TEXT_DIM
+            clear_session_kwargs["activeforeground"] = TEXT
+        else:
+            clear_session_kwargs["fg"] = TEXT_DIM
         tk.Button(parent, text="Clear Session",
-                  command=self._clear_session,
-                  font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL,
-                  relief="flat", cursor="hand2",
-                  activeforeground=TEXT, activebackground=BG_PANEL
-                  ).pack(anchor="w", padx=16, pady=2)
+                command=self._clear_session,
+                **clear_session_kwargs).pack(anchor="w", padx=16, pady=2)
 
     def _build_chat(self, parent):
         answer_frame = tk.Frame(parent, bg=BG)
@@ -485,21 +511,26 @@ class MainWindow:
         input_frame.pack(fill="x", padx=16, pady=(0, 16))
 
         self.query_input = tk.Text(input_frame, font=FONT_MAIN,
-                                   fg=TEXT, bg=BG_INPUT,
-                                   insertbackground=TEXT, relief="flat",
-                                   highlightthickness=1, highlightcolor=ACCENT,
-                                   highlightbackground=BORDER,
-                                   height=3, padx=12, pady=10, wrap="word")
+                                fg=TEXT, bg=BG_INPUT,
+                                insertbackground=TEXT, relief="flat",
+                                highlightthickness=1, highlightcolor=ACCENT,
+                                highlightbackground=BORDER,
+                                height=3, padx=12, pady=10, wrap="word")
         self.query_input.pack(side="left", fill="both", expand=True)
         self.query_input.bind("<Return>", self._on_enter)
         self.query_input.bind("<Shift-Return>", lambda e: None)
 
+        send_btn_kwargs = dict(font=FONT_LABEL, bg=ACCENT,
+                            activebackground=ACCENT_DIM,
+                            relief="flat", cursor="hand2",
+                            padx=20, pady=10)
+        if not IS_MAC:
+            send_btn_kwargs["fg"] = TEXT
+            send_btn_kwargs["activeforeground"] = TEXT
+
         tk.Button(input_frame, text="Send",
-                  command=self._submit_query,
-                  font=FONT_LABEL, fg=TEXT, bg=ACCENT,
-                  activebackground=ACCENT_DIM,
-                  relief="flat", cursor="hand2",
-                  padx=20, pady=10).pack(side="left", padx=(8, 0))
+                command=self._submit_query,
+                **send_btn_kwargs).pack(side="left", padx=(8, 0))
 
     # ── Model selector ─────────────────────────────────────────────────────────
 
@@ -708,7 +739,7 @@ class MainWindow:
         registry = get_registry(self.user_id)
         if not registry:
             tk.Label(self.docs_frame, text="No documents loaded.",
-                     font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(anchor="w")
+                    font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(anchor="w")
             return
         for record in registry:
             row = tk.Frame(self.docs_frame, bg=BG_PANEL)
@@ -716,16 +747,22 @@ class MainWindow:
             name = record.get("file_name", "Unknown")
             chunks = record.get("chunk_count", 0)
             tk.Label(row, text=f"📄 {name[:22]}{'...' if len(name) > 22 else ''}",
-                     font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
-                     anchor="w").pack(side="left", fill="x", expand=True)
+                    font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
+                    anchor="w").pack(side="left", fill="x", expand=True)
             tk.Label(row, text=f"{chunks}c",
-                     font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(side="left")
+                    font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(side="left")
             file_path = record.get("file_path", "")
-            tk.Button(row, text="✕", command=lambda p=file_path: self._remove_doc(p),
-                      font=FONT_SMALL, fg=ERROR, bg=BG_PANEL,
-                      relief="flat", cursor="hand2",
-                      activeforeground=TEXT, activebackground=BG_PANEL,
-                      padx=4).pack(side="right")
+            remove_kwargs = dict(font=FONT_SMALL, bg=BG_PANEL,
+                                relief="flat", cursor="hand2",
+                                activebackground=BG_PANEL, padx=4)
+            if not IS_MAC:
+                remove_kwargs["fg"] = ERROR
+                remove_kwargs["activeforeground"] = TEXT
+            else:
+                remove_kwargs["fg"] = ERROR
+            tk.Button(row, text="✕",
+                    command=lambda p=file_path: self._remove_doc(p),
+                    **remove_kwargs).pack(side="right")
 
     def _remove_doc(self, file_path: str):
         from src.tools.document import remove_from_registry
@@ -740,20 +777,26 @@ class MainWindow:
         facts = profile.get("facts", {})
         if not facts:
             tk.Label(self.profile_frame, text="No profile facts yet.",
-                     font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(anchor="w")
+                    font=FONT_SMALL, fg=TEXT_DIM, bg=BG_PANEL).pack(anchor="w")
             return
         for key, value in facts.items():
             row = tk.Frame(self.profile_frame, bg=BG_PANEL)
             row.pack(fill="x", pady=1)
             label = key.replace("_", " ").title()
             tk.Label(row, text=f"{label}: {value}",
-                     font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
-                     anchor="w", wraplength=180).pack(side="left", fill="x", expand=True)
-            tk.Button(row, text="✕", command=lambda k=key: self._delete_fact(k),
-                      font=FONT_SMALL, fg=ERROR, bg=BG_PANEL,
-                      relief="flat", cursor="hand2",
-                      activeforeground=TEXT, activebackground=BG_PANEL,
-                      padx=4).pack(side="right")
+                    font=FONT_SMALL, fg=TEXT, bg=BG_PANEL,
+                    anchor="w", wraplength=180).pack(side="left", fill="x", expand=True)
+            delete_kwargs = dict(font=FONT_SMALL, bg=BG_PANEL,
+                                relief="flat", cursor="hand2",
+                                activebackground=BG_PANEL, padx=4)
+            if not IS_MAC:
+                delete_kwargs["fg"] = ERROR
+                delete_kwargs["activeforeground"] = TEXT
+            else:
+                delete_kwargs["fg"] = ERROR
+            tk.Button(row, text="✕",
+                    command=lambda k=key: self._delete_fact(k),
+                    **delete_kwargs).pack(side="right")
 
     def _delete_fact(self, fact_key: str):
         from src.memory.profile import delete_profile_fact
