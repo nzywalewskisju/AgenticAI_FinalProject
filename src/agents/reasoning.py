@@ -57,9 +57,7 @@ RULES:
 
 - For short or vague queries, expand them before retrieving using specific policy terms.
 - For state-specific questions, always include the state name in your retrieval query.
-- When a query mentions Professional Development Fund, tuition, MBA, or degree programs, retrieve using "professional development fund eligibility excluded degree programs".
-- Never conflate the Professional Development Fund with the Tuition Reimbursement Program — they are separate programs with different rules.
-- When previous attempt feedback mentions a contradiction, change your retrieval query completely and search for the specific policy that was contradicted.
+- When previous attempt feedback mentions a specific failure reason, change your retrieval query to search for the specific policy area mentioned in the feedback.
 
 - When a retrieved chunk says a policy is "effective January 1, 2025" it means it is currently active — never describe it as a future benefit.
 - Never tell a user a benefit "will be available" if the retrieved chunk says it is already effective.
@@ -179,23 +177,6 @@ def _execute_action(
 
         action_lower = action_input.lower()
         query_lower = original_query.lower()
-
-        # Auto keyword search for MBA/degree exclusion
-        pd_fund_query = any(term in query_lower for term in [
-            "professional development", "pd fund", "development fund"
-        ])
-        if any(term in action_lower for term in [
-            "professional development", "pd fund", "mba", "degree", "tuition"
-        ]) or pd_fund_query:
-            from src.tools.retrieval import keyword_search as kw_search
-            exclusion_chunks = kw_search("degree programs not covered MBA excluded", user_id)
-            for c in exclusion_chunks:
-                if c["text"] not in existing_texts:
-                    chunks_used.append(c)
-                    existing_texts.add(c["text"])
-                    new_count += 1
-            if exclusion_chunks:
-                print(f"[REASONING] Auto-added {len(exclusion_chunks)} exclusion chunks")
 
         # Auto keyword search for pet insurance queries
         if any(term in action_lower for term in [

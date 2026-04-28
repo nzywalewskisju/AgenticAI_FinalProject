@@ -231,9 +231,11 @@ def run_orchestrator(
         )
 
         # Accumulate chunks across retries
+        accumulated_texts = {c["text"] for c in all_chunks_accumulated}
         for c in reasoning_result.get("chunks_used", []):
-            if c not in all_chunks_accumulated:
+            if c["text"] not in accumulated_texts:
                 all_chunks_accumulated.append(c)
+                accumulated_texts.add(c["text"])
 
         print(f"[ORCHESTRATOR] Reasoning status: {reasoning_result['status']}")
         print(f"[ORCHESTRATOR] Chunks used: {len(reasoning_result['chunks_used'])}")
@@ -286,8 +288,7 @@ def run_orchestrator(
             query=query,
             situation_facts=reasoning_result["situation_facts"],
             chunks_used=all_chunks_accumulated,
-            is_retry=retry_count > 0,
-            had_contradiction="contradiction" in " ".join(failure_history).lower()
+            is_retry=retry_count > 0
         )
         print(f"[ORCHESTRATOR] review_result after run_review_agent: {review_result}")
 
