@@ -1,5 +1,8 @@
 {
   "user_id": "d976e6a6-dcee-4072-859d-0c36b07e89c8",
-  "facts": {},
-  "last_updated": "2026-04-29T01:41:06.295924"
+  "facts": {
+    "location": "California",
+    "employment_duration": "4 years"
+  },
+  "last_updated": "2026-04-29T02:23:09.771516"
 }
