@@ -36,9 +36,6 @@ PII_MESSAGE = (
 
 
 def run_governance_precheck(query: str, user_id: str) -> dict:
-    print(f"[GOVERNOR] Precheck starting for query: {query[:80]}")
-    print(f"[GOVERNOR] Query lower: {query.lower()[:80]}")
-    print(f"[GOVERNOR] HSA in query: {'hsa' in query.lower()}")
     """
     Runs security and compliance checks before any reasoning occurs.
     Order: injection detection → always-escalate keywords → whitelist → combined PII + risk LLM call

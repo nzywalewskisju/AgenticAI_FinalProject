@@ -198,8 +198,6 @@ def _execute_action(
                     new_count += 1
             if secure_chunks:
                 print(f"[REASONING] Auto-added {len(secure_chunks)} SECURE 2.0 chunks")
-                for c in secure_chunks:
-                    print(f"[REASONING] SECURE chunk: {c['text'][:200]}")
 
         return f"Retrieved {len(chunks)} chunks ({new_count} new):\n\n{format_chunks_for_prompt(chunks)}"
 

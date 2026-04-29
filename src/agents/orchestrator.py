@@ -290,7 +290,6 @@ def run_orchestrator(
             chunks_used=all_chunks_accumulated,
             is_retry=retry_count > 0
         )
-        print(f"[ORCHESTRATOR] review_result after run_review_agent: {review_result}")
 
         if review_result["passed"]:
             break
@@ -325,9 +324,6 @@ def run_orchestrator(
         }
 
     # ── Step 9: Governor post-check ────────────────────────────────────────────
-    print(f"[ORCHESTRATOR] review_result type: {type(review_result)}")
-    print(f"[ORCHESTRATOR] review_result value: {review_result}")
-    print(f"[ORCHESTRATOR] Answer going to postcheck: '{review_result['answer'][:100]}'")
     step("Running final compliance check...")
     postcheck = run_governance_postcheck(
         session_id=session_id,
