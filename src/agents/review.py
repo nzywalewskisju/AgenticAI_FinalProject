@@ -175,8 +175,7 @@ def run_review_agent(
     query: str,
     situation_facts: str,
     chunks_used: list,
-    is_retry: bool = False,
-    had_contradiction: bool = False
+    is_retry: bool = False
 ) -> dict:
     """
     Runs all review checks.
@@ -221,7 +220,7 @@ def run_review_agent(
 
     # Grounding — hard block on first attempt, non-blocking after contradiction retry
     grounding = results.get("grounding", {"passed": False, "score": 0.0, "reason": "Check did not run"})
-    if not grounding["passed"] and not (is_retry and had_contradiction):
+    if not grounding["passed"] and not is_retry:
         return {
             "passed": False,
             "answer": "",
@@ -232,23 +231,10 @@ def run_review_agent(
         print(f"[REVIEW] Grounding warning on retry after contradiction (non-blocking): score={grounding['score']:.2f}")
 
     # Alignment — blocking for contradictions and factual errors on first attempt only
+    # Alignment — non-blocking warning only
     alignment = results.get("alignment", {"passed": True, "reason": ""})
     if not alignment["passed"]:
-        reason = alignment.get("reason", "").lower()
-        is_contradiction = any(word in reason for word in [
-            "contradict", "explicitly excludes", "not covered",
-            "wrong program", "confuses", "opposite", "prohibit",
-            "incorrectly states", "inaccurate", "incorrect"
-        ])
-        if is_contradiction and not is_retry:
-            return {
-                "passed": False,
-                "answer": "",
-                "grounding_score": grounding["score"],
-                "failure_reason": f"Policy contradiction detected: {alignment['reason']}"
-            }
-        else:
-            print(f"[REVIEW] Alignment warning (non-blocking): {alignment['reason']}")
+        print(f"[REVIEW] Alignment warning (non-blocking): {alignment['reason']}")
 
     # Tone — non-blocking warning
     tone = results.get("tone", {"passed": True, "reason": ""})
