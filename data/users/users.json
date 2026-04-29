@@ -1,58 +1,18 @@
 [
   {
-    "user_id": "e4b8c575-28b7-4e98-939a-3b0949f43d1a",
-    "username": "nickz123",
-    "password_hash": "$2b$12$SQ7jjAuPwH14NEfqgCIMVOlb1VynSwKa1YsLBtapNvzXR.AXGNBIW",
-    "security_question": "What is your mother's maiden name?",
-    "security_answer_hash": "$2b$12$XdvlchuJSYxWIerBy8NLGOhjlGDaEH04HZbwZI.s1kH1xisCyoIp6",
-    "created_at": "2026-04-21T01:26:46.805056"
-  },
-  {
-    "user_id": "f34df06c-20a3-4238-9d0b-c36f90af992a",
-    "username": "nickz1234",
-    "password_hash": "$2b$12$SE2oK5uPoM25Xbm3BHQixefMqPF9YEBPgasaDqGhL/Mc4aklmX/Sm",
-    "security_question": "What is your mother's maiden name?",
-    "security_answer_hash": "$2b$12$coJi5EMIHs6oXDD8FZf4NOyTLVJzOTR/rr1pETIIX0iRhfWSNgp4q",
-    "created_at": "2026-04-21T17:44:02.808482"
-  },
-  {
-    "user_id": "1263dbbc-b5af-42d2-af49-ba20324deffe",
-    "username": "nickz12345",
-    "password_hash": "$2b$12$Cg5pP8Czq9aRfJyQFT1MN.mqmfh9uLoPW6LW2C6UUjNQxKWn5oThe",
-    "security_question": "What is your mother's maiden name?",
-    "security_answer_hash": "$2b$12$8rdLAGskXuHE3lRhkJaMU.7qJwzMa3TEHrghtOSChNZvKNmMjT3Oi",
-    "created_at": "2026-04-22T01:21:06.723005"
-  },
-  {
-    "user_id": "a5152c19-3f3b-45e2-a22e-d6e4f6934312",
-    "username": "dennisj3",
-    "password_hash": "$2b$12$663kflGxL9vkgEJP1OBLCeznisaV6T9FbaSTZS1R12oMedPYwV8T6",
-    "security_question": "What is your mother's maiden name?",
-    "security_answer_hash": "$2b$12$677P89aPcaXrfHGung.Pvu8LYjENMyrxLwqqfs1ktnxKE92l5f386",
-    "created_at": "2026-04-23T17:34:54.601669"
-  },
-  {
-    "user_id": "c2fecc92-8195-47a6-9913-78824671c53e",
-    "username": "dennisj4",
-    "password_hash": "$2b$12$Bvp7uBOJUzfnIcMf33t/DOWPIbQM9cW6vsOi6vhNO7b2olBe7qbCy",
-    "security_question": "What is your mother's maiden name?",
-    "security_answer_hash": "$2b$12$GZ6p8OuBvWwk0duKCE6xwOZdhn6QmYt.cyxoKLG5cfPwIoL5cVZFW",
-    "created_at": "2026-04-23T18:12:24.865711"
-  },
-  {
-    "user_id": "a6218b2a-f59d-4f99-9466-1d455b46b0be",
-    "username": "nickzz",
-    "password_hash": "$2b$12$4MTjoB9kVEbtQ0a5Ww9DieuQttst41CfUnzEV2NV0JF91kyk4Su6a",
-    "security_question": "What is your mother's maiden name?",
-    "security_answer_hash": "$2b$12$ee4jG.1XoyA7EFRaTd.qpeWxzAFjJLiZCSRfHIPzSpHtTOgb8NUqO",
-    "created_at": "2026-04-28T20:29:30.159557"
-  },
-  {
     "user_id": "27ee5d21-fd56-4372-8c47-d01c095f9e9f",
     "username": "nickzzz",
     "password_hash": "$2b$12$5REpcoYGj3amk18ljCFLEeBr1HEOzoNRfz.rzlc3P8kTjwO3axYrW",
     "security_question": "What city were you born in?",
     "security_answer_hash": "$2b$12$WOb4NyLTGvBaAhie4/pzDugdM36ZmmRwDyBwi8gLI1JsfkUozgega",
     "created_at": "2026-04-28T21:51:25.958159"
+  },
+  {
+    "user_id": "d976e6a6-dcee-4072-859d-0c36b07e89c8",
+    "username": "dennisj123",
+    "password_hash": "$2b$12$xkp5xqSx.tSxssdX4F89t.8NtQodPITYkFPdL9xxE/TezukrsbluW",
+    "security_question": "What is your mother's maiden name?",
+    "security_answer_hash": "$2b$12$bRn9J9b58L0SKQPCCxr1eu1m9eccWEKxTLWtutWeEd8geZYe9YPXy",
+    "created_at": "2026-04-29T01:40:24.598197"
   }
 ]
