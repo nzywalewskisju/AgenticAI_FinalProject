@@ -1,21 +1,11 @@
-# src/tools/governance.py
-# Governance tools owned by the Governor Sub-Agent (agents/governor.py).
-# Functions:
-#   detect_pii(query)
-#     — scans the user's query for another employee's private information
-#     — flags names + sensitive context, social security numbers, medical details
-#       that refer to someone other than the querying user
-#   assess_escalation_risk(query, user_id)
-#     — scores the query 0.0 to 1.0 for escalation risk
-#     — scores >= ESCALATION_THRESHOLD route to human HR instead of the agent
-#   compliance_stamp(answer)
-#     — scans the final answer for legally dangerous absolute statements
-#     — flags language like "you are entitled to" or "the company must"
-#     — returns passed: True/False and a list of flagged phrases
-#   write_audit_log(session_id, user_id, query, route, chunks_used,
-#                   final_answer, grounding_score, compliance_passed)
-#     — appends a full interaction record to logs/audit_log.jsonl
-#     — called after every answered query, non-negotiable
+# governance.py
+# Low-level governance tools called by the governor agent.
+# Handles prompt injection detection via keyword matching and LLM check,
+# PII scanning, escalation risk scoring, compliance stamping of final
+# answers for legally dangerous language, and append-only audit logging.
+#
+# Functions: detect_pii, assess_escalation_risk, compliance_stamp,
+#            write_audit_log, detect_prompt_injection
 
 import json
 import os
@@ -41,10 +31,9 @@ ALWAYS_ESCALATE_TOPICS = [
 
 
 def detect_pii(query: str) -> dict:
-    """
-    Scans the user's query for another employee's private information.
-    Returns {contains_pii: bool, reason: str}
-    """
+    # Scans the query for private information about another employee.
+    # Flags names combined with salary, medical details, or credentials.
+
     system_prompt = """You are a privacy compliance checker for an HR system.
 Your job is to detect if a query contains private information belonging to another employee.
 This includes: another employee's name combined with sensitive context, social security numbers,
@@ -59,11 +48,9 @@ Respond only in JSON: {"contains_pii": true/false, "reason": "explanation"}"""
 
 
 def assess_escalation_risk(query: str) -> dict:
-    """
-    Scores the query 0.0 to 1.0 for escalation risk.
-    Also checks against ALWAYS_ESCALATE_TOPICS regardless of score.
-    Returns {risk_score: float, should_escalate: bool, reason: str}
-    """
+    # Scores the query from 0.0 to 1.0 for escalation risk. Checks
+    # always-escalate keywords first before running the LLM scorer.
+
     query_lower = query.lower()
     for topic in ALWAYS_ESCALATE_TOPICS:
         if topic in query_lower:
@@ -95,11 +82,9 @@ Respond only in JSON: {"risk_score": 0.0, "reason": "explanation"}"""
 
 
 def compliance_stamp(answer: str) -> dict:
-    """
-    Scans the final answer for legally dangerous absolute statements
-    and hedge phrases from the blacklist.
-    Returns {passed: bool, flagged_phrases: list, reason: str}
-    """
+    # Scans the final answer for legally dangerous absolute statements
+    # and hedge phrases. Returns a pass or fail result with flagged phrases.
+
     flagged = []
 
     for phrase in HEDGE_PHRASE_BLACKLIST:
@@ -138,11 +123,9 @@ def write_audit_log(
     grounding_score: float,
     compliance_passed: bool
 ) -> None:
-    """
-    Appends a full interaction record to logs/audit_log.jsonl.
-    Called after every answered query — non-negotiable.
-    Never raises an exception — audit logging must never crash the system.
-    """
+    # Appends a full interaction record to logs/audit_log.jsonl.
+    # Never raises an exception — audit logging must never crash the system.
+
     os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
 
     entry = {
@@ -205,11 +188,9 @@ INJECTION_KEYWORDS = [
 
 
 def detect_prompt_injection(query: str) -> dict:
-    """
-    Detects prompt injection and social engineering attempts.
-    First checks loose keyword patterns, then uses LLM for subtler attempts.
-    Returns {is_injection: bool, reason: str}
-    """
+    # Detects prompt injection and social engineering attempts using
+    # keyword matching first, then an LLM check for subtler attempts.
+    
     query_lower = query.lower()
 
     # Hard keyword check first — catches obvious attempts without an LLM call

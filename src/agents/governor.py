@@ -1,15 +1,13 @@
-# src/agents/governor.py
-# Governor Sub-Agent — runs twice per query: pre-check and post-check.
-# Calls tools from tools/governance.py only.
-# Pre-check (before Reasoning):
-#   - Combined single LLM call for PII detection and escalation risk assessment
-#   - Keyword check for always-escalate topics runs first with no LLM call needed
-#   - high-stakes topics always escalate regardless of score
-# Post-check (after Review passes):
-#   - compliance_stamp: flag legally dangerous absolute statements in the final answer
-#   - write_audit_log: append full interaction record to logs/audit_log.jsonl
-# If pre-check blocks the query, no other agents are called.
-# Audit logging is non-negotiable — runs after every answered query without exception.
+# governor.py
+# Security and compliance agent that runs before and after every query.
+# Pre-check detects prompt injection, PII, and high-risk escalation topics
+# across four layers: injection detection, always-escalate keywords,
+# policy question whitelist, and combined PII and risk LLM call.
+# Post-check stamps the final answer for legally dangerous language and
+# writes every interaction to the audit log. Sends email alerts on
+# security or escalation events.
+#
+# Functions: run_governance_precheck, run_governance_postcheck
 
 from src.tools.governance import (
     compliance_stamp,
@@ -36,10 +34,9 @@ PII_MESSAGE = (
 
 
 def run_governance_precheck(query: str, user_id: str) -> dict:
-    """
-    Runs security and compliance checks before any reasoning occurs.
-    Order: injection detection → always-escalate keywords → whitelist → combined PII + risk LLM call
-    """
+    # Runs four security layers before any reasoning begins. Blocks the
+    # query and sends an email alert if injection, PII, or escalation is detected.
+
     # ── Layer 1: Hard keyword injection check — no LLM needed ─────────────────
     injection_result = detect_prompt_injection(query)
     print(f"[GOVERNOR] Injection check: is_injection={injection_result['is_injection']} reason={injection_result.get('reason', '')[:100]}")
@@ -184,11 +181,10 @@ def run_governance_postcheck(
     final_answer: str,
     grounding_score: float
 ) -> dict:
-    """
-    Runs compliance stamp and audit logging after the answer passes Review.
-    Returns {passed: bool, flagged_phrases: list, answer: str}
-    Audit log is always written regardless of compliance result.
-    """
+    # Runs compliance stamp on the final answer and writes the full
+    # interaction to the audit log. Appends a disclaimer if sensitive
+    # legal language is detected.
+    
     # Guard against empty answer reaching compliance stamp
     if not final_answer or not final_answer.strip():
         print(f"[GOVERNOR] Warning: empty answer received — skipping compliance stamp")

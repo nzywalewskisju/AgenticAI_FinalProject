@@ -1,23 +1,11 @@
-# src/agents/reasoning.py
-# Reasoning Sub-Agent — implements the ReAct loop.
-# This is what makes the system an agent rather than a retrieval chatbot.
-# The agent dynamically decides which tools to call, in what order, and how many times.
-# ReAct loop structure: Thought → Action → PAUSE → Observation → repeat
-# Max iterations: MAX_REACT_TURNS (set in config.py)
-# Tools available to this agent:
-#   - check_policy_coverage (MUST be called before retrieve_chunks)
-#   - retrieve_chunks
-#   - keyword_search
-#   - rerank_results
-#   - get_current_date
-#   - request_clarification
-# The agent explicitly:
-#   1. Extracts the facts of the user's situation from the query
-#   2. Retrieves policy relevant to those facts
-#   3. Reasons about the gap between the user's situation and policy requirements
-#   4. Produces concrete, personalized advice — not just a policy summary
-# Returns: {situation_facts, draft_answer, chunks_used, status, iterations}
-# Status: "success" | "clarification" | "no_info" | "error"
+# reasoning.py
+# Implements the ReAct (Reason, Act, Observe) loop for the PolicyPro agent.
+# The reasoning agent dynamically calls tools to retrieve policy chunks,
+# check coverage, search by keyword, and produce a grounded draft answer.
+# Retrieval is capped at 3 calls per query. Auto-triggers fire keyword
+# searches for known edge cases (SECURE 2.0, pet insurance, equipment damage).
+#
+# Functions: run_reasoning_agent, _execute_action
 
 import re
 import queue
@@ -262,13 +250,9 @@ def run_reasoning_agent(
     prior_chunks: list = None,
     status_queue=None
 ) -> dict:
-    """
-    Runs the ReAct loop for the given query.
-    Retrieval is capped at 2 calls total to prevent excessive chunk accumulation.
-    Accepts prior_chunks from previous attempts so the agent does not
-    start from zero on retries.
-    Returns {situation_facts, draft_answer, chunks_used, status, iterations}
-    """
+    # Runs the ReAct loop for the given query. Calls tools dynamically
+    # across up to 4 turns and returns a draft answer with chunks used.
+    
     def emit(msg: str):
         print(f"[REASONING] {msg}")
         if status_queue:

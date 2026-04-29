@@ -1,3 +1,11 @@
+# email_alert.py
+# Sends email alerts to the HR inbox when the governor detects a security
+# or escalation event. Uses Gmail SMTP with an app password stored in
+# the .env file. Includes the username, query text, reason, alert type,
+# and timestamp in both plain text and HTML formats.
+#
+# Functions: send_alert_email
+
 import smtplib
 import os
 from email.mime.text import MIMEText
@@ -17,11 +25,9 @@ def send_alert_email(
     alert_type: str,
     timestamp: str = None
 ) -> bool:
-    """
-    Sends an alert email to the HR/security inbox.
-    alert_type: "security" or "escalation"
-    Returns True if sent successfully, False otherwise.
-    """
+    # Sends an HTML and plain text alert email via Gmail SMTP. Returns
+    # True if sent successfully, False if the app password is not configured.
+    
     if not GMAIL_APP_PASSWORD:
         print(f"[EMAIL] No Gmail app password configured — skipping email alert")
         return False

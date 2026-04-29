@@ -1,15 +1,11 @@
-# src/agents/orchestrator.py
-# Top-level orchestrator — main entry point for all queries.
-# Responsibilities:
-#   - classify_query: route to hr_in_scope, high_stakes, or out_of_scope
-#   - manage_session_memory: attach prior conversation turns to the query context
-#   - extract_profile_facts: detect personal facts in the query and persist to profile
-#   - check_document_availability: if no documents ingested, ask for a file
-#   - coordinate the full agent pipeline in order:
-#       Governor pre-check → Reasoning → Review → Governor post-check
-#   - enforce no-chunks guard: reject any answer produced without retrieved evidence
-#   - enforce max 2 retries if Review rejects the Reasoning output
-#   - return final answer or escalation/clarification message to the GUI
+# orchestrator.py
+# Central coordinator for the PolicyPro HR assistant.
+# Receives every user query, runs the governor pre-check, manages the
+# reasoning and review retry loop, and assembles the final answer.
+# Handles out-of-scope routing, document availability checks, session
+# and profile context injection, and date augmentation.
+#
+# Functions: run_orchestrator, classify_query, _is_followup_query
 
 import uuid
 import queue
@@ -34,10 +30,8 @@ class RoutingDecision(BaseModel):
 
 
 def classify_query(query: str) -> RoutingDecision:
-    """
-    Classifies the query into one of three routing categories.
-    Uses structured JSON output validated with Pydantic.
-    """
+    # Sends the query to the LLM to determine if it is HR-related or
+    # out of scope. Returns a routing object with a category field.
     system_prompt = f"""You are a query classifier for an HR Policy Assistant.
 Classify the query into exactly one of these categories:
 
@@ -98,10 +92,8 @@ Respond only in JSON: {{"category": "...", "confidence": 0.0, "reasoning": "..."
     )
 
 def _is_followup_query(query: str, session_context: str) -> bool:
-    """
-    Returns True if the query appears to be a follow-up to the prior conversation.
-    Detects pronouns and references that only make sense with prior context.
-    """
+    # Returns True if the query contains signals that it refers to a
+    # previous question, such as "what about" or "and also".
     if not session_context or "No prior" in session_context:
         return False
     followup_signals = [
@@ -121,6 +113,9 @@ def run_orchestrator(
     session_id: str = None,
     status_queue: queue.Queue = None
 ) -> dict:
+    # Entry point for every user query. Runs pre-check, manages the
+    # reasoning and review retry loop, and returns the final answer.
+
     if session_id is None:
         session_id = str(uuid.uuid4())
 

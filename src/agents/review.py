@@ -1,13 +1,12 @@
-# src/agents/review.py
-# Review Sub-Agent — quality gate before the final answer reaches the user.
-# Runs five checks. Checks 1-4 run in parallel for speed.
-#   1. verify_grounding      — every claim traces to a retrieved chunk
-#   2. check_policy_alignment — answer accurately reflects policy wording
-#   3. check_tone            — appropriate sensitivity for HR topics
-#   4. check_advice_applicability — agent actually applied policy to user's situation
-#   5. inject_citations      — attach source document + section to answer
-# If any check fails: reject → back to Reasoning (max 2 retries total)
-# If all pass: forward to Governor post-check
+# review.py
+# Quality gate that evaluates every draft answer before it reaches the user.
+# Runs four checks in parallel: grounding, alignment, tone, and applicability.
+# Grounding is a hard block on first attempt, non-blocking on retry.
+# All other checks are non-blocking warnings. Injects source citations
+# into passing answers.
+#
+# Functions: run_review_agent, verify_grounding, check_policy_alignment,
+#            check_tone, check_advice_applicability, inject_citations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from ctypes import alignment
@@ -17,8 +16,7 @@ from src.tools.utils import call_llm, safe_json_parse, format_chunks_for_citatio
 def verify_grounding(answer: str, chunks_used: list, threshold: float = 0.4) -> dict:
     """
     Checks that every factual claim in the answer traces to a retrieved chunk.
-    Returns {passed: bool, score: float, reason: str}
-    Default threshold is 0.4. Lowered to 0.3 on retries.
+    Returns a score from 0.0 to 1.0 and a pass or fail result.
     """
     if not chunks_used:
         return {
@@ -54,6 +52,9 @@ Respond only in JSON: {"score": 0.0, "reason": "explanation"}"""
 
 
 def check_policy_alignment(answer: str, chunks_used: list) -> dict:
+    # Checks that the answer accurately represents what the policy says.
+    # Flags exaggerated entitlements, wrong programs, or contradictions.
+
     chunks_text = "\n\n".join(
         f"[{i+1}] {c.get('text', '')}" for i, c in enumerate(chunks_used)
     )
@@ -177,12 +178,9 @@ def run_review_agent(
     chunks_used: list,
     is_retry: bool = False
 ) -> dict:
-    """
-    Runs all review checks.
-    Grounding is a hard block on first attempt, non-blocking on retry after contradiction.
-    Alignment blocks on contradictions and factual errors on first attempt only.
-    Returns {passed: bool, answer: str, grounding_score: float, failure_reason: str}
-    """
+    # Runs all four checks in parallel and returns a pass or fail result.
+    # Grounding blocks on first attempt. All other checks are warnings only.
+    
     if not chunks_used:
         return {
             "passed": False,

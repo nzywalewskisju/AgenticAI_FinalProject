@@ -1,21 +1,12 @@
-# src/tools/utils.py
+# utils.py
 # Shared utility functions used across agents and tools.
-# Functions:
-#   call_llm(prompt, system_prompt, temperature=0)
-#     — single entry point for all Ollama/Llama calls in the system
-#     — temperature is 0 by default on every call — never change this default
-#     — all LLM calls in the system go through here, never call Ollama directly
-#   get_current_date()
-#     — returns today's date for reasoning about policy effective dates
-#   format_chunks_for_prompt(chunks)
-#     — formats retrieved chunks into a clean string for injection into prompts
-#   format_chunks_for_citation(chunks)
-#     — formats chunks into citation references for the final answer
-#   truncate_text(text, max_tokens)
-#     — truncates text to stay within context window limits
-#   clean_llm_json_response(response)
-#     — strips markdown code fences and whitespace from LLM JSON responses
-#     — use before every json.loads() call on an LLM response
+# call_llm routes inference to either Ollama (local) or OpenAI GPT-4o mini
+# depending on the active provider setting in config. All LLM calls in
+# the system go through here — never call Ollama or OpenAI directly.
+#
+# Functions: call_llm, _call_ollama, _call_openai, get_current_date,
+#            format_chunks_for_prompt, format_chunks_for_citation,
+#            truncate_text, clean_llm_json_response, safe_json_parse
 
 import config
 import json
@@ -26,11 +17,9 @@ from config import LLM_MODEL, OLLAMA_BASE_URL
 
 
 def call_llm(prompt: str, system_prompt: str = "", temperature: float = 0) -> str:
-    """
-    Single entry point for all LLM calls in the system.
-    Routes to Ollama or OpenAI based on ACTIVE_LLM_PROVIDER in config.
-    Temperature is 0 by default on every call — never change this default.
-    """
+    # Single entry point for all LLM calls. Routes to Ollama or OpenAI
+    # based on the active provider setting in config.
+
     import config
 
     if config.ACTIVE_LLM_PROVIDER == "openai":
@@ -40,9 +29,9 @@ def call_llm(prompt: str, system_prompt: str = "", temperature: float = 0) -> st
 
 
 def _call_ollama(prompt: str, system_prompt: str = "", temperature: float = 0) -> str:
-    """
-    Calls local Llama via Ollama REST API.
-    """
+    # Sends a prompt to the local Llama model via the Ollama REST API
+    # and returns the response text.
+
     payload = {
         "model": config.LLM_MODEL,
         "messages": [],
@@ -63,9 +52,9 @@ def _call_ollama(prompt: str, system_prompt: str = "", temperature: float = 0) -
 
 
 def _call_openai(prompt: str, system_prompt: str = "", temperature: float = 0) -> str:
-    """
-    Calls GPT-4o mini via OpenAI API.
-    """
+    # Sends a prompt to GPT-4o mini via the OpenAI API and returns
+    # the response text.
+
     try:
         from openai import OpenAI
     except ImportError:
@@ -91,18 +80,16 @@ def _call_openai(prompt: str, system_prompt: str = "", temperature: float = 0) -
 
 
 def get_current_date() -> str:
-    """
-    Returns today's date as a readable string.
-    Used by the Reasoning Agent to reason about policy effective dates.
-    """
+    # Returns today's date as a readable string. Used by the reasoning
+    # agent to reason about policy effective dates and contribution limits.
+
     return date.today().strftime("%B %d, %Y")
 
 
 def format_chunks_for_prompt(chunks: list[dict]) -> str:
-    """
-    Formats retrieved chunks into a clean string for injection into prompts.
-    Each chunk is labeled with its source document and section header.
-    """
+    # Formats a list of retrieved chunks into a numbered string with
+    # source and section labels for injection into agent prompts.
+
     if not chunks:
         return "No relevant policy sections were found."
 
@@ -117,10 +104,9 @@ def format_chunks_for_prompt(chunks: list[dict]) -> str:
 
 
 def format_chunks_for_citation(chunks: list[dict]) -> list[dict]:
-    """
-    Formats chunks into citation references for the final answer.
-    Returns a list of dicts with document_name, section_header, and chunk_index.
-    """
+    # Formats chunks into a list of citation dicts containing document
+    # name, section header, and chunk index for the review agent.
+
     citations = []
     for chunk in chunks:
         metadata = chunk.get("metadata", {})
@@ -133,10 +119,9 @@ def format_chunks_for_citation(chunks: list[dict]) -> list[dict]:
 
 
 def truncate_text(text: str, max_chars: int = 3000) -> str:
-    """
-    Truncates text to stay within context window limits.
-    Truncates at the last complete sentence within the limit where possible.
-    """
+    # Truncates text to stay within context window limits. Tries to
+    # break at the last complete sentence within the limit.
+
     if len(text) <= max_chars:
         return text
 
@@ -148,11 +133,9 @@ def truncate_text(text: str, max_chars: int = 3000) -> str:
 
 
 def clean_llm_json_response(response: str) -> str:
-    """
-    Strips markdown code fences and whitespace from LLM JSON responses.
-    Use before every json.loads() call on an LLM response.
-    Handles ```json ... ``` and ``` ... ``` fences.
-    """
+    # Strips markdown code fences and whitespace from LLM responses.
+    # Must be called before every json.loads on LLM output.
+
     response = response.strip()
     response = re.sub(r"^```(?:json)?\s*", "", response)
     response = re.sub(r"\s*```$", "", response)
@@ -160,11 +143,9 @@ def clean_llm_json_response(response: str) -> str:
 
 
 def safe_json_parse(response: str, fallback: dict = None) -> dict:
-    """
-    Cleans and parses a JSON response from the LLM.
-    Returns fallback dict on failure instead of raising an exception.
-    Always use this instead of bare json.loads() on LLM output.
-    """
+    # Cleans and parses a JSON response from the LLM. Returns the
+    # fallback dict on failure instead of raising an exception.
+    
     if fallback is None:
         fallback = {}
     try:

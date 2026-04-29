@@ -1,22 +1,15 @@
-# src/tools/document.py
-# Document and registry tools owned by the Reasoning Sub-Agent.
-# Functions:
-#   check_policy_coverage(topic, user_id)
-#     — checks whether the user's ChromaDB collection contains content relevant
-#       to the topic before attempting retrieval
-#     — MUST be called before retrieve_chunks in the ReAct loop
-#     — prevents retrieval attempts when no relevant policy exists
-#   list_available_topics(user_id)
-#     — returns a summary of what policy topics are covered in the user's documents
-#     — used to inform the user what the system can and cannot answer
-# Document registry functions:
-#   add_to_registry(user_id, file_path, chunk_count)
-#     — records a successfully ingested document
-#   get_registry(user_id)
-#     — returns the full document registry for a user
-#   remove_from_registry(user_id, file_path)
-#     — removes a document record when the user clears it
-#   registry is persisted to data/registry/{user_id}.json
+# document.py
+# Document coverage checking and registry management.
+# check_policy_coverage runs a lightweight semantic search to verify
+# relevant policy exists before full retrieval is attempted.
+# list_available_topics summarizes what policy areas are covered in
+# the user's ingested documents. Registry functions track ingested
+# documents per user so the GUI can display and manage them.
+#
+# Functions: check_policy_coverage, list_available_topics,
+#            add_to_registry, get_registry, remove_from_registry,
+#            _get_collection, _embed_query, _get_registry_path,
+#            _load_registry, _save_registry
 
 import json
 import os
@@ -28,10 +21,8 @@ import requests
 
 
 def _get_collection(user_id: str):
-    """
-    Returns the ChromaDB collection scoped to this user.
-    Collection name: hr_documents_{user_id}
-    """
+    # Returns the ChromaDB collection scoped to the given user.
+
     client = chromadb.PersistentClient(path=f"{CHROMA_DB_PATH}/{user_id}")
     collection = client.get_or_create_collection(
         name=f"{COLLECTION_NAME}_{user_id}",
@@ -41,10 +32,14 @@ def _get_collection(user_id: str):
 
 
 def _get_registry_path(user_id: str) -> str:
+     # Returns the file path for the user's registry JSON file.
     return f"./data/registry/{user_id}.json"
 
 
 def _load_registry(user_id: str) -> list:
+    # Reads and returns the user's registry JSON from disk.
+    # Returns an empty list if the file does not exist yet.
+
     path = _get_registry_path(user_id)
     if not os.path.exists(path):
         return []
@@ -53,6 +48,8 @@ def _load_registry(user_id: str) -> list:
 
 
 def _save_registry(user_id: str, registry: list) -> None:
+    # Writes the registry list to the user's registry JSON file on disk.
+
     path = _get_registry_path(user_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -60,11 +57,8 @@ def _save_registry(user_id: str, registry: list) -> None:
 
 
 def _embed_query(text: str) -> list[float]:
-    """
-    Embeds a query string using Ollama's nomic-embed-text model.
-    Must match the embedding model used at ingestion time.
-    Uses /api/embed to match the batch embedder endpoint.
-    """
+    # Embeds a query string using nomic-embed-text via Ollama.
+
     response = requests.post(
         f"{OLLAMA_BASE_URL}/api/embed",
         json={"model": EMBEDDING_MODEL, "input": text}
@@ -74,12 +68,9 @@ def _embed_query(text: str) -> list[float]:
 
 
 def check_policy_coverage(topic: str, user_id: str) -> dict:
-    """
-    Checks whether the user's ChromaDB collection contains content
-    relevant to the topic before attempting retrieval.
-    MUST be called before retrieve_chunks in the ReAct loop.
-    Returns {covered: bool, reason: str}
-    """
+    # Runs a lightweight semantic search to verify relevant policy exists
+    # before full retrieval is attempted. Must be called before retrieve_chunks.
+
     try:
         collection = _get_collection(user_id)
         if collection.count() == 0:
@@ -116,11 +107,9 @@ def check_policy_coverage(topic: str, user_id: str) -> dict:
 
 
 def list_available_topics(user_id: str) -> dict:
-    """
-    Returns a summary of what policy topics are covered in the user's documents.
-    Used to inform the user what the system can and cannot answer.
-    Returns {topics: list[str], document_count: int}
-    """
+    # Returns a list of policy topic names based on the filenames of
+    # documents the user has ingested.
+
     registry = _load_registry(user_id)
     if not registry:
         return {"topics": [], "document_count": 0}
@@ -140,11 +129,9 @@ def list_available_topics(user_id: str) -> dict:
 
 
 def add_to_registry(user_id: str, file_path: str, chunk_count: int) -> dict:
-    """
-    Records a successfully ingested document in the user's registry.
-    Uses a hash of the file path to detect re-uploads of the same file.
-    Returns the new registry record.
-    """
+    # Records a successfully ingested document in the user's registry file.
+    # Skips silently if the document is already registered.
+
     registry = _load_registry(user_id)
 
     file_hash = hashlib.md5(file_path.encode()).hexdigest()
@@ -168,19 +155,16 @@ def add_to_registry(user_id: str, file_path: str, chunk_count: int) -> dict:
 
 
 def get_registry(user_id: str) -> list:
-    """
-    Returns the full document registry for a user.
-    Used by the GUI document panel and the orchestrator.
-    """
+    # Returns the full list of ingested document records for a user.
+    # Used by the GUI document panel and the orchestrator availability check.
+
     return _load_registry(user_id)
 
 
 def remove_from_registry(user_id: str, file_path: str) -> bool:
-    """
-    Removes a document record from the registry and deletes its chunks
-    from the user's ChromaDB collection.
-    Returns True if removed, False if not found.
-    """
+    # Removes a document from the registry and deletes its chunks from
+    # ChromaDB. Returns True if removed, False if not found.
+    
     registry = _load_registry(user_id)
     file_hash = hashlib.md5(file_path.encode()).hexdigest()
 

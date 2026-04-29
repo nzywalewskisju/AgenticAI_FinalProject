@@ -1,16 +1,13 @@
-# src/tools/retrieval.py
-# Retrieval tools owned by the Reasoning Sub-Agent.
-# Functions:
-#   retrieve_chunks(query, user_id, top_k)
-#     — dense vector semantic search against the user's ChromaDB collection
-#     — filters results by SIMILARITY_THRESHOLD before returning
-#   keyword_search(query, user_id, top_k)
-#     — sparse BM25 keyword search for exact term matching
-#     — complements semantic search for policy-specific terminology
-#   rerank_results(query, chunks)
-#     — re-scores retrieved chunks for true relevance using a second Llama call
-#     — each chunk is scored 0-10, results sorted descending, low scorers dropped
-# Never called directly — always called through the ReAct loop in reasoning.py.
+# retrieval.py
+# Retrieval tools used by the reasoning agent to search policy documents.
+# Semantic search uses ChromaDB vector similarity via nomic-embed-text
+# embeddings. Keyword search uses BM25 for exact term matching, which
+# catches content that semantic search misses due to fragmented PDF tables
+# or poor section headers. Reranking uses a secondary LLM call to score
+# chunks by true relevance and drop low scorers.
+#
+# Functions: retrieve_chunks, keyword_search, rerank_results,
+#            _get_collection, _embed_query
 
 import requests
 from config import (
@@ -23,9 +20,9 @@ from src.tools.utils import call_llm, safe_json_parse, format_chunks_for_prompt
 
 
 def _get_collection(user_id: str):
-    """
-    Returns the ChromaDB collection scoped to this user.
-    """
+    # Returns the ChromaDB collection scoped to the given user.
+    # Collection is named hr_documents_{user_id}.
+
     client = chromadb.PersistentClient(path=f"{CHROMA_DB_PATH}/{user_id}")
     collection = client.get_or_create_collection(
         name=f"{COLLECTION_NAME}_{user_id}",
@@ -35,11 +32,9 @@ def _get_collection(user_id: str):
 
 
 def _embed_query(text: str) -> list[float]:
-    """
-    Embeds a query string using Ollama's nomic-embed-text model.
-    Must match the embedding model used at ingestion time.
-    Uses /api/embed to match the batch embedder endpoint.
-    """
+    # Sends a text string to Ollama's nomic-embed-text model and returns
+    # the embedding vector.
+
     response = requests.post(
         f"{OLLAMA_BASE_URL}/api/embed",
         json={"model": EMBEDDING_MODEL, "input": text}
@@ -49,11 +44,9 @@ def _embed_query(text: str) -> list[float]:
 
 
 def retrieve_chunks(query: str, user_id: str, top_k: int = TOP_K_RESULTS) -> list[dict]:
-    """
-    Dense vector semantic search against the user's ChromaDB collection.
-    Filters results by SIMILARITY_THRESHOLD before returning.
-    Returns list of {text, metadata, distance} dicts.
-    """
+    # Embeds the query and runs cosine similarity search against the
+    # user's ChromaDB collection. Filters results by similarity threshold.
+
     collection = _get_collection(user_id)
 
     if collection.count() == 0:
@@ -84,12 +77,9 @@ def retrieve_chunks(query: str, user_id: str, top_k: int = TOP_K_RESULTS) -> lis
 
 
 def keyword_search(query: str, user_id: str, top_k: int = TOP_K_RESULTS) -> list[dict]:
-    """
-    Sparse BM25 keyword search for exact term matching.
-    Complements semantic search for policy-specific terminology.
-    Retrieves all chunks from ChromaDB then ranks with BM25.
-    Returns list of {text, metadata, score} dicts.
-    """
+    # Pulls all chunks from ChromaDB and ranks them using BM25 exact
+    # term matching. Returns top results with score above zero.
+
     collection = _get_collection(user_id)
 
     if collection.count() == 0:
@@ -130,12 +120,9 @@ def keyword_search(query: str, user_id: str, top_k: int = TOP_K_RESULTS) -> list
 
 
 def rerank_results(query: str, chunks: list[dict]) -> list[dict]:
-    """
-    Re-scores retrieved chunks for true relevance using a single Llama call.
-    All chunks are sent in one call — the model scores each 0-10.
-    Chunks scoring below 4 are dropped. Results sorted descending by score.
-    Returns re-scored and filtered list of chunk dicts.
-    """
+   # Sends all chunks to the LLM in one call and asks it to score each
+    # 0 to 10 for relevance. Drops chunks scoring below 4 and sorts the rest.
+    
     if not chunks:
         return []
 
