@@ -67,12 +67,9 @@ RULES:
 - Never describe enrollment portals, forms, or deadlines unless they are explicitly stated in a retrieved chunk.
 - NEVER reference chunks by number in your Answer. Do not say "policy chunk [1]" or "Source:" inline.
 
-
 - When answering equipment damage questions, always check retrieved chunks for ALL damage categories — accidental, negligent, and theft each have different rules and financial consequences.
 - When a chunk contains a table with multiple rows, extract ALL relevant rows not just the first matching one.
 - Never make classification determinations that the policy assigns to IT, HR, or a manager. If the policy says "IT assessment required", tell the user IT will make that determination — do not decide for them.
-- Equipment damage categories are MUTUALLY EXCLUSIVE — accidental OR negligent, never both simultaneously. Never tell a user they owe both a deductible AND a percentage of replacement cost at the same time.
-- When multiple policy categories could apply, present each one separately and explain that IT determines which applies after their assessment.
 
 - The current date is provided at the top of every query. Always use that date when reasoning about contribution limits, deadlines, or effective dates.
 - Never assume a year from your training data — always use the date provided in the query.
@@ -179,21 +176,6 @@ def _execute_action(
 
         action_lower = action_input.lower()
         query_lower = original_query.lower()
-
-        # Auto keyword search for pet insurance queries
-        if any(term in action_lower for term in [
-            "pet", "dog", "cat", "animal", "nationwide", "voluntary benefits"
-        ]) or any(term in query_lower for term in ["pet", "dog", "cat", "parrot", "animal"]):
-            print(f"[REASONING] Auto-triggering pet insurance keyword search")
-            from src.tools.retrieval import keyword_search as kw_search
-            pet_chunks = kw_search("pet insurance dogs cats nationwide voluntary benefits", user_id)
-            for c in pet_chunks:
-                if c["text"] not in existing_texts:
-                    chunks_used.append(c)
-                    existing_texts.add(c["text"])
-                    new_count += 1
-            if pet_chunks:
-                print(f"[REASONING] Auto-added {len(pet_chunks)} pet insurance chunks")
 
         # Auto keyword search for SECURE 2.0 enhanced catch-up contribution
         is_401k_age_query = (

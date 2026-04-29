@@ -19,6 +19,7 @@ from src.tools.governance import (
 )
 from src.tools.utils import call_llm, safe_json_parse
 from config import ESCALATION_THRESHOLD
+from src.tools.email_alert import send_alert_email
 
 
 ESCALATION_MESSAGE = (
@@ -46,6 +47,13 @@ def run_governance_precheck(query: str, user_id: str) -> dict:
     injection_result = detect_prompt_injection(query)
     print(f"[GOVERNOR] Injection check: is_injection={injection_result['is_injection']} reason={injection_result.get('reason', '')[:100]}")
     if injection_result.get("is_injection"):
+        send_alert_email(
+            subject="Security Alert — Prompt Injection Attempt",
+            username=user_id,
+            query=query,
+            reason=injection_result.get("reason", "Prompt injection detected"),
+            alert_type="security"
+        )
         return {
             "cleared": False,
             "reason": f"Prompt injection detected: {injection_result.get('reason', '')}",
@@ -61,6 +69,13 @@ def run_governance_precheck(query: str, user_id: str) -> dict:
     query_lower = query.lower()
     for topic in ALWAYS_ESCALATE_TOPICS:
         if topic in query_lower:
+            send_alert_email(
+                subject="HR Escalation",
+                username=user_id,
+                query=query,
+                reason=f"Always-escalate topic detected: {topic}",
+                alert_type="escalation"
+            )
             return {
                 "cleared": False,
                 "reason": f"Always-escalate topic detected: {topic}",
@@ -124,6 +139,13 @@ Respond only in JSON:
     })
 
     if result.get("contains_pii"):
+        send_alert_email(
+            subject="Security Alert — PII Detected",
+            username=user_id,
+            query=query,
+            reason=result.get("pii_reason", "PII detected in query"),
+            alert_type="security"
+        )
         return {
             "cleared": False,
             "reason": result.get("pii_reason", "PII detected"),
@@ -133,6 +155,13 @@ Respond only in JSON:
 
     risk_score = float(result.get("risk_score", 0.0))
     if risk_score >= ESCALATION_THRESHOLD:
+        send_alert_email(
+            subject="HR Escalation — High Risk Query",
+            username=user_id,
+            query=query,
+            reason=result.get("risk_reason", "High escalation risk"),
+            alert_type="escalation"
+        )
         return {
             "cleared": False,
             "reason": result.get("risk_reason", "High escalation risk"),
