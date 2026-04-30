@@ -1,10 +1,13 @@
-# src/ingestion/embedder.py
-# Responsible for embedding chunks and storing them in ChromaDB.
-# Uses Ollama's nomic-embed-text model for all embeddings — runs locally, no external calls.
-# Each user gets their own ChromaDB collection: hr_documents_{user_id}
-# Uses deterministic chunk IDs (source_file + chunk_index) to prevent
-#   duplicate ingestion if the same file is uploaded again.
-# Collection uses cosine similarity space (hnsw:space: cosine).
+# embedder.py
+# Third and final stage of the document ingestion pipeline.
+# Converts text chunks into vector embeddings using nomic-embed-text via
+# Ollama and stores them in the user's ChromaDB collection. Processes chunks
+# in batches of 32 for efficiency and skips chunks already stored to avoid
+# duplication on re-ingestion. Also contains the full pipeline entry point
+# that coordinates loading, chunking, embedding, and registry updates.
+#
+# Functions: embed_and_store, run_ingestion_pipeline, _get_collection,
+#            _embed_text, _embed_texts_batch, _make_chunk_id
 
 import requests
 import chromadb
@@ -17,10 +20,9 @@ BATCH_SIZE = 32
 
 
 def _get_collection(user_id: str):
-    """
-    Returns the ChromaDB collection scoped to this user.
-    Creates it if it does not exist.
-    """
+    # Returns the ChromaDB collection scoped to this user, creating it
+    # if it does not exist yet.
+
     client = chromadb.PersistentClient(path=f"{CHROMA_DB_PATH}/{user_id}")
     collection = client.get_or_create_collection(
         name=f"{COLLECTION_NAME}_{user_id}",
@@ -30,11 +32,9 @@ def _get_collection(user_id: str):
 
 
 def _embed_text(text: str) -> list[float]:
-    """
-    Embeds a single text string using Ollama's nomic-embed-text model.
-    Used at retrieval time for query embedding — kept for compatibility
-    with retrieval.py and document.py which embed single queries.
-    """
+    # Embeds a single text string using the Ollama embeddings endpoint.
+    # Kept for compatibility with retrieval.py and document.py.
+
     response = requests.post(
         f"{OLLAMA_BASE_URL}/api/embeddings",
         json={"model": EMBEDDING_MODEL, "prompt": text}
@@ -44,11 +44,9 @@ def _embed_text(text: str) -> list[float]:
 
 
 def _embed_texts_batch(texts: list[str]) -> list[list[float]]:
-    """
-    Embeds multiple texts in a single Ollama API call.
-    Much faster than one call per chunk at ingestion time.
-    Uses the /api/embed endpoint which accepts a list of inputs.
-    """
+    # Embeds a list of texts in a single Ollama API call using the
+    # /api/embed endpoint. Much faster than one call per chunk.
+
     response = requests.post(
         f"{OLLAMA_BASE_URL}/api/embed",
         json={"model": EMBEDDING_MODEL, "input": texts}
@@ -58,22 +56,18 @@ def _embed_texts_batch(texts: list[str]) -> list[list[float]]:
 
 
 def _make_chunk_id(metadata: dict) -> str:
-    """
-    Creates a deterministic chunk ID from source_file and chunk_index.
-    Prevents duplicate ingestion if the same file is uploaded again.
-    """
+    # Creates a deterministic chunk ID from source_file and chunk_index.
+    # Prevents duplicate ingestion if the same file is uploaded again.
+
     source = metadata.get("source_file", "unknown")
     index = metadata.get("chunk_index", 0)
     return f"{source}__chunk_{index}"
 
 
 def embed_and_store(chunks: list[dict], user_id: str) -> int:
-    """
-    Embeds all chunks and stores them in the user's ChromaDB collection.
-    Processes chunks in batches of BATCH_SIZE for significantly faster ingestion.
-    Skips chunks whose ID already exists in the collection.
-    Returns the number of new chunks stored.
-    """
+    # Embeds all new chunks in batches and stores them in ChromaDB.
+    # Skips any chunks whose ID already exists. Returns the count stored.
+
     collection = _get_collection(user_id)
     stored_count = 0
 
@@ -121,11 +115,9 @@ def run_ingestion_pipeline(
     file_paths: list[str],
     user_id: str
 ) -> dict:
-    """
-    Full ingestion pipeline — loads, chunks, embeds, and stores documents.
-    Called inline when a user uploads new files.
-    Returns {files_processed, chunks_stored, skipped_files}
-    """
+    # Full pipeline entry point — loads, chunks, embeds, and stores documents
+    # then updates the document registry. Returns a summary dict.
+    
     from src.ingestion.loader import load_all_documents
     from src.ingestion.chunker import chunk_all_documents
     from src.tools.document import add_to_registry

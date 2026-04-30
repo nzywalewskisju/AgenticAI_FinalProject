@@ -1,14 +1,14 @@
-# src/memory/profile.py
-# Medium-term user profile memory — persists across sessions.
-# Stores personal facts the user has stated about themselves, automatically
-# extracted by the orchestrator without requiring explicit "remember this" commands.
-# Examples of stored facts:
-#   employment_duration, role, employment_type, department, ongoing_situations
-# These facts are injected into the Reasoning Agent's context so the agent
-# can apply policy to the user's specific situation without re-asking every session.
-# Users can view and delete individual facts from the GUI profile panel.
+# profile.py
+# Medium-term user profile memory that persists across sessions.
+# Automatically extracts personal employment facts from user messages and
+# stores them to disk per user. Injected as context into relevant queries
+# so the agent can apply policy to the user's specific situation without
+# re-asking every session. Users can view and delete facts from the GUI.
 # Persisted to data/profiles/{user_id}.json
-# Does NOT store another employee's information or sensitive medical details.
+#
+# Functions: load_profile, save_profile, extract_and_update_profile,
+#            get_profile_context_string, get_relevant_profile_context,
+#            delete_profile_fact, clear_profile, _get_profile_path
 
 import json
 import os
@@ -20,14 +20,14 @@ PROFILES_DIR = "./data/profiles"
 
 
 def _get_profile_path(user_id: str) -> str:
+    # Returns the file path for the user's profile JSON file.
     return f"{PROFILES_DIR}/{user_id}.json"
 
 
 def load_profile(user_id: str) -> dict:
-    """
-    Loads the user's profile from disk.
-    Returns empty profile dict if none exists yet.
-    """
+    # Reads and returns the user's profile dict from disk.
+    # Returns an empty profile if none exists yet.
+
     path = _get_profile_path(user_id)
     if not os.path.exists(path):
         return {"user_id": user_id, "facts": {}}
@@ -36,9 +36,8 @@ def load_profile(user_id: str) -> dict:
 
 
 def save_profile(user_id: str, profile: dict) -> None:
-    """
-    Saves the user's profile to disk.
-    """
+    # Writes the profile dict to the user's profile JSON file on disk.
+    
     os.makedirs(PROFILES_DIR, exist_ok=True)
     path = _get_profile_path(user_id)
     with open(path, "w", encoding="utf-8") as f:
@@ -46,12 +45,10 @@ def save_profile(user_id: str, profile: dict) -> None:
 
 
 def extract_and_update_profile(user_id: str, message: str) -> list[str]:
-    """
-    Automatically extracts personal facts from the user's message
-    and merges them into the persisted profile.
-    Returns a list of newly extracted fact labels so the GUI can notify the user.
-    Called by the orchestrator on every incoming message.
-    """
+    # Sends the user's message to the LLM to extract employment facts,
+    # merges any new facts into the persisted profile, and returns a
+    # list of newly added fact labels for the GUI to display.
+
     system_prompt = """You are a fact extractor for an HR assistant.
 Extract any personal employment facts the user mentions about themselves.
 Only extract facts about the user themselves — not about other employees.
@@ -87,10 +84,9 @@ Use only the keys that are present. Do not invent keys."""
 
 
 def get_profile_context_string(user_id: str) -> str:
-    """
-    Returns the user's profile facts as a formatted string
-    for injection into agent prompts.
-    """
+    # Returns all stored profile facts as a formatted string for
+    # injection into agent prompts.
+
     profile = load_profile(user_id)
     facts = profile.get("facts", {})
 
@@ -106,11 +102,9 @@ def get_profile_context_string(user_id: str) -> str:
 
 
 def delete_profile_fact(user_id: str, fact_key: str) -> bool:
-    """
-    Removes a single fact from the user's profile.
-    Called when user deletes a fact from the GUI profile panel.
-    Returns True if deleted, False if key not found.
-    """
+    # Removes a single fact from the user's profile and saves to disk.
+    # Called when the user deletes a fact from the GUI profile panel.
+
     profile = load_profile(user_id)
     if fact_key in profile.get("facts", {}):
         del profile["facts"][fact_key]
@@ -120,18 +114,16 @@ def delete_profile_fact(user_id: str, fact_key: str) -> bool:
 
 
 def clear_profile(user_id: str) -> None:
-    """
-    Wipes all facts from the user's profile.
-    """
+    # Wipes all facts from the user's profile and saves the empty state.
+    
     profile = load_profile(user_id)
     profile["facts"] = {}
     save_profile(user_id, profile)
 
 def get_relevant_profile_context(user_id: str, query: str) -> str:
-    """
-    Returns only the profile facts relevant to the current query.
-    Prevents facts from unrelated prior questions contaminating new answers.
-    """
+    # Returns only the profile facts relevant to the current query topic.
+    # Prevents unrelated facts from contaminating the agent's reasoning.
+
     profile = load_profile(user_id)
     facts = profile.get("facts", {})
 

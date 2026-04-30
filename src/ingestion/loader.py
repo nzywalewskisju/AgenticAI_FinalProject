@@ -1,12 +1,12 @@
-# src/ingestion/loader.py
-# Responsible for reading raw files into text and metadata.
-# Accepts a list of file paths — files can come from anywhere on the user's disk.
-# Supports PDF (via LangChain PyPDFLoader) and DOCX (via python-docx).
-# Preserves document structure by detecting and marking headings with ## prefix
-# so the chunker can use them as section boundaries.
-# Returns a list of dicts: {text, metadata} where metadata contains:
-#   source_file, file_type, document_name, user_id
-# Never called directly by agents — called by the ingestion pipeline only.
+# loader.py
+# First stage of the document ingestion pipeline.
+# Extracts raw text from PDF and DOCX files, scans every line for structural
+# heading patterns, and marks detected headings with ## so the chunker can
+# identify section boundaries. Attaches document-level metadata including
+# filename, file type, document name, and user ID to every loaded document.
+#
+# Functions: load_document, load_all_documents, load_pdf, load_docx,
+#            _detect_and_mark_headings
 
 import os
 from docx import Document
@@ -14,11 +14,9 @@ from langchain_community.document_loaders import PyPDFLoader
 
 
 def _detect_and_mark_headings(text: str) -> str:
-    """
-    Scans text for likely heading patterns and prefixes them with ##
-    so the chunker can detect section boundaries.
-    Only marks lines that are clearly section headings — not table rows or fragments.
-    """
+    # Scans every line of extracted text and prefixes structural headings
+    # with ## while skipping table fragments, prices, and short lines.
+
     import re
     lines = text.split("\n")
     marked = []
@@ -64,10 +62,9 @@ def _detect_and_mark_headings(text: str) -> str:
 
 
 def load_pdf(file_path: str, user_id: str) -> list[dict]:
-    """
-    Loads a PDF file using LangChain's PyPDFLoader.
-    Returns a list of {text, metadata} dicts — one per page, then merged.
-    """
+    # Loads a PDF using LangChain's PyPDFLoader, merges all pages into one
+    # text string, runs heading detection, and returns a metadata dict.
+
     loader = PyPDFLoader(file_path)
     pages = loader.load()
 
@@ -88,11 +85,9 @@ def load_pdf(file_path: str, user_id: str) -> list[dict]:
 
 
 def load_docx(file_path: str, user_id: str) -> list[dict]:
-    """
-    Loads a DOCX file using python-docx.
-    Preserves heading structure by detecting paragraph styles.
-    Returns a list of {text, metadata} dicts.
-    """
+    # Loads a DOCX using python-docx, preserves heading structure from
+    # paragraph styles, and returns a metadata dict.
+
     doc = Document(file_path)
     lines = []
 
@@ -119,10 +114,9 @@ def load_docx(file_path: str, user_id: str) -> list[dict]:
 
 
 def load_document(file_path: str, user_id: str) -> list[dict]:
-    """
-    Routes a single file to the correct loader based on extension.
-    Raises ValueError for unsupported file types.
-    """
+    # Routes a single file to load_pdf or load_docx based on extension.
+    # Raises ValueError for unsupported file types.
+
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == ".pdf":
@@ -134,11 +128,9 @@ def load_document(file_path: str, user_id: str) -> list[dict]:
 
 
 def load_all_documents(file_paths: list[str], user_id: str) -> list[dict]:
-    """
-    Loads all documents from a list of file paths.
-    Skips files that fail to load and prints a warning.
-    Returns a flat list of all {text, metadata} dicts across all files.
-    """
+    # Loads all files in the list, skips any that fail with a warning,
+    # and returns a flat list of all loaded document dicts.
+    
     all_documents = []
 
     for file_path in file_paths:

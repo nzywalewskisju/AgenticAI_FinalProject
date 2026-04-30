@@ -1,13 +1,13 @@
-# src/ingestion/chunker.py
-# Responsible for splitting loaded documents into chunks for embedding.
-# Uses a hybrid chunking strategy in this order:
-#   1. Heading/section detection — splits on ## markers and numbered section headers
-#   2. Paragraph fallback — splits on double newlines if no headings found
-#   3. Fixed-size fallback — uses RecursiveCharacterTextSplitter if paragraphs are too large
-# Each chunk carries metadata: source_file, file_type, document_name,
-#   section_header, chunk_index, user_id
-# Chunk size and overlap are set in config.py (CHUNK_SIZE, CHUNK_OVERLAP).
-# Never called directly by agents — called by the ingestion pipeline only.
+# chunker.py
+# Second stage of the document ingestion pipeline.
+# Splits loaded documents into retrievable chunks using a hybrid strategy:
+# heading-based splitting first, paragraph fallback if no headings are found,
+# fragment merging for sections under 300 characters, and fixed-size windowing
+# with overlap for sections that exceed the chunk size limit. Each chunk is
+# packaged with full metadata for storage in ChromaDB.
+#
+# Functions: chunk_document, chunk_all_documents, _split_by_headings,
+#            _split_by_paragraphs, _apply_fixed_size_fallback
 
 import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -15,10 +15,9 @@ from config import CHUNK_SIZE, CHUNK_OVERLAP
 
 
 def _split_by_headings(text: str) -> list[tuple[str, str]]:
-    """
-    Splits text on ## heading markers.
-    Returns list of (section_header, section_text) tuples.
-    """
+    # Splits text at every ## marker and returns a list of
+    # (section_header, section_text) tuples.
+
     pattern = re.compile(r"^## (.+)$", re.MULTILINE)
     matches = list(pattern.finditer(text))
 
@@ -38,10 +37,9 @@ def _split_by_headings(text: str) -> list[tuple[str, str]]:
 
 
 def _split_by_paragraphs(text: str) -> list[tuple[str, str]]:
-    """
-    Splits text on double newlines when no headings are detected.
-    Returns list of ("Paragraph N", paragraph_text) tuples.
-    """
+    # Splits text on double newlines when no headings are detected.
+    # Returns (Paragraph N, paragraph_text) tuples.
+
     paragraphs = [p.strip() for p in re.split(r"\n\n+", text) if p.strip()]
     return [(f"Paragraph {i + 1}", p) for i, p in enumerate(paragraphs)]
 
@@ -50,10 +48,9 @@ def _apply_fixed_size_fallback(
     section_header: str,
     section_text: str
 ) -> list[tuple[str, str]]:
-    """
-    Applies RecursiveCharacterTextSplitter to a section that exceeds CHUNK_SIZE.
-    Returns list of (section_header, chunk_text) tuples — header is preserved.
-    """
+    # Applies RecursiveCharacterTextSplitter to any section that exceeds
+    # CHUNK_SIZE. Preserves the original section header on all sub-chunks.
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
@@ -64,12 +61,9 @@ def _apply_fixed_size_fallback(
 
 
 def chunk_document(document: dict) -> list[dict]:
-    """
-    Takes a single loaded document {text, metadata} and returns
-    a list of chunk dicts ready for embedding.
-    Applies hybrid chunking strategy: headings → paragraphs → merge fragments → fixed-size.
-    Each chunk carries full metadata including section_header and chunk_index.
-    """
+    # Runs the full five-step hybrid chunking strategy on a single document
+    # and returns a list of chunk dicts with text and metadata.
+
     text = document["text"]
     metadata = document["metadata"]
     chunks = []
@@ -119,10 +113,9 @@ def chunk_document(document: dict) -> list[dict]:
 
 
 def chunk_all_documents(documents: list[dict]) -> list[dict]:
-    """
-    Chunks all loaded documents.
-    Returns a flat list of all chunk dicts across all documents.
-    """
+    # Chunks every document in the list and returns a flat list of all
+    # chunk dicts across all documents.
+    
     all_chunks = []
     for document in documents:
         doc_chunks = chunk_document(document)
