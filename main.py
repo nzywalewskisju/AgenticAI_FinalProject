@@ -1,18 +1,10 @@
 # main.py
-# CLI entry point for the HR Policy Assistant.
-# Usage:
-#   python main.py                          — start the assistant in the terminal
-#   python main.py --reset-password <user>  — wipe a user's password so they can reset via GUI
-# For the full GUI experience, run gui.py instead.
-# This file should contain no business logic — it imports and calls only.
-
-# main.py
-# CLI entry point for the HR Policy Assistant.
-# Usage:
-#   python main.py                          — start the assistant in the terminal
-#   python main.py --reset-password <user>  — wipe a user's password so they can reset via GUI
-# For the full GUI experience, run gui.py instead.
-# This file should contain no business logic — it imports and calls only.
+# CLI entry point for PolicyPro.
+# Launches a minimal terminal interface for testing queries without the GUI.
+# Also accepts --reset-password to wipe a user's credentials from the terminal
+# when they are locked out and cannot recover via the GUI.
+#
+# Functions: main, run_cli, reset_password
 
 import argparse
 import sys
@@ -22,10 +14,9 @@ import getpass
 
 
 def reset_password(username: str) -> None:
-    """
-    Wipes the password hash for a user so they can set a new one via the GUI.
-    Requires direct terminal access — not available through the GUI.
-    """
+    # Wipes the password hash and security answer for a user account so
+    # they can set a new password via the GUI login screen.
+
     from config import USERS_FILE
 
     if not os.path.exists(USERS_FILE):
@@ -50,10 +41,9 @@ def reset_password(username: str) -> None:
 
 
 def run_cli() -> None:
-    """
-    Minimal CLI interface for testing queries without the GUI.
-    Prompts for username and password, then accepts queries in a loop.
-    """
+    # Minimal terminal interface that prompts for login credentials and
+    # accepts HR policy queries in a loop until the user types quit.
+
     from src.agents.orchestrator import run_orchestrator
     from gui import authenticate_user
 
@@ -99,6 +89,9 @@ def run_cli() -> None:
 
 
 def main():
+    # Parses command line arguments and routes to either reset_password
+    # or run_cli depending on the flags provided.
+
     parser = argparse.ArgumentParser(description="HR Policy Assistant")
     parser.add_argument(
         "--reset-password",

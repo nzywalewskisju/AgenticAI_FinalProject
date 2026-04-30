@@ -1,18 +1,15 @@
 # gui.py
-# Desktop GUI entry point for the HR Policy Assistant.
-# Run with: python gui.py
-# Launches a login dialog first, then the main application window.
-# Login dialog handles: account creation, login, forgot password flow.
-# Main window contains:
-#   - File picker for uploading HR documents from anywhere on disk
-#   - Document panel showing all ingested documents with per-doc clear buttons
-#   - User profile panel showing remembered facts with ability to delete individual facts
-#   - Query input field (Enter key or Submit button)
-#   - Scrollable answer display with citations
-#   - Status indicator: idle / ingesting / thinking / ready / error
-#   - Clear Session button that resets conversation memory only
-# All inference and storage is local — no external API calls at runtime.
-# Errors from Ollama and ChromaDB are surfaced in the window, not the terminal.
+# Tkinter desktop application for the PolicyPro HR assistant.
+# Provides a login screen with account creation and password recovery,
+# a main chat interface with real-time status updates, a model selector
+# for switching between Llama and GPT-4o mini, a document management
+# panel for ingesting and removing HR policy files, and a profile panel
+# for viewing and deleting extracted user facts.
+#
+# Classes: LoginWindow, MainWindow
+# Module-level functions: main, authenticate_user, create_user,
+#                         verify_security_answer, update_password,
+#                         _load_users, _save_users
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -31,6 +28,9 @@ IS_MAC = platform.system() == "Darwin"
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 
 def _load_users() -> list:
+    # Reads and returns the list of user accounts from users.json.
+    # Returns an empty list if the file does not exist yet.
+
     if not os.path.exists(USERS_FILE):
         return []
     with open(USERS_FILE, "r", encoding="utf-8") as f:
@@ -41,12 +41,17 @@ def _load_users() -> list:
 
 
 def _save_users(users: list) -> None:
+    # Writes the updated user list back to users.json on disk.
+
     os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
     with open(USERS_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, indent=2)
 
 
 def authenticate_user(username: str, password: str) -> dict | None:
+    # Checks the provided credentials against stored bcrypt hashes.
+    # Returns the user dict on success, None on failure.
+
     users = _load_users()
     user = next((u for u in users if u["username"].lower() == username.lower()), None)
     if not user or not user.get("password_hash"):
@@ -57,6 +62,9 @@ def authenticate_user(username: str, password: str) -> dict | None:
 
 
 def create_user(username: str, password: str, security_question: str, security_answer: str) -> dict | None:
+    # Creates a new user account with hashed password and security answer.
+    # Returns the new user dict, or None if the username already exists.
+
     users = _load_users()
     if any(u["username"].lower() == username.lower() for u in users):
         return None
@@ -76,6 +84,9 @@ def create_user(username: str, password: str, security_question: str, security_a
 
 
 def verify_security_answer(username: str, answer: str) -> bool:
+    # Checks a password recovery answer against the stored bcrypt hash.
+    # Returns True if the answer matches, False otherwise.
+
     users = _load_users()
     user = next((u for u in users if u["username"].lower() == username.lower()), None)
     if not user:
@@ -84,6 +95,9 @@ def verify_security_answer(username: str, answer: str) -> bool:
 
 
 def update_password(username: str, new_password: str) -> bool:
+    # Replaces a user's password hash with a new bcrypt hash.
+    # Called after successful security answer verification.
+
     users = _load_users()
     user = next((u for u in users if u["username"].lower() == username.lower()), None)
     if not user:
@@ -118,6 +132,8 @@ FONT_LABEL  = ("Helvetica Neue", 11, "bold")
 
 class LoginWindow:
     def __init__(self, on_success):
+        # Builds the login dialog window and shows the login view by default.
+
         self.on_success = on_success
         self.root = tk.Tk()
         self.root.title("HR Policy Assistant")
@@ -128,6 +144,8 @@ class LoginWindow:
         self.root.mainloop()
 
     def _center(self, w, h):
+        # Centers the window on the screen at the given width and height.
+
         self.root.update_idletasks()
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
@@ -136,13 +154,19 @@ class LoginWindow:
         self.root.geometry(f"{w}x{h}+{x}+{y}")
 
     def _clear(self):
+        # Destroys all child widgets in the frame to allow view switching.
+
         for w in self.root.winfo_children():
             w.destroy()
 
     def _label(self, parent, text, font=FONT_MAIN, fg=TEXT, **kwargs):
+        # Creates and packs a styled label widget.
+
         return tk.Label(parent, text=text, font=font, fg=fg, bg=BG, **kwargs)
 
     def _entry(self, parent, show=None):
+        # Creates and packs a styled text entry widget. Pass show='*' for passwords.
+
         e = tk.Entry(parent, font=FONT_MAIN, fg=TEXT, bg=BG_INPUT,
                      insertbackground=TEXT, relief="flat",
                      highlightthickness=1, highlightcolor=ACCENT,
@@ -150,6 +174,8 @@ class LoginWindow:
         return e
 
     def _btn(self, parent, text, command, primary=True):
+        # Creates a styled button with Mac and Windows color handling.
+
         bg = ACCENT if primary else BG_INPUT
         if IS_MAC:
             return tk.Button(parent, text=text, command=command,
@@ -163,6 +189,9 @@ class LoginWindow:
                             relief="flat", cursor="hand2", pady=8)
 
     def _build_login_view(self):
+        # Renders the username and password fields and the login and
+        # create account buttons.
+
         self._clear()
         pad = {"padx": 40, "pady": 6}
 
@@ -198,6 +227,9 @@ class LoginWindow:
                   cursor="hand2", activeforeground=TEXT, activebackground=BG).pack(side="left", padx=8)
 
     def _do_login(self):
+        # Reads credentials from the entry fields, calls authenticate_user,
+        # and either proceeds to MainWindow or shows an error message.
+
         username = self.username_var.get().strip()
         password = self.password_var.get()
         if not username or not password:
@@ -211,6 +243,9 @@ class LoginWindow:
             self.error_var.set("Incorrect username or password.")
 
     def _build_create_view(self):
+        # Renders the account creation form with username, password,
+        # confirmation, and security question fields.
+
         self._clear()
         pad = {"padx": 40, "pady": 4}
 
@@ -268,6 +303,9 @@ class LoginWindow:
         self._btn(self.root, "← Back to Sign In", self._build_login_view, primary=False).pack(fill="x", padx=40)
 
     def _build_forgot_view(self):
+        # Renders the password recovery form that verifies the security
+        # answer before allowing a new password to be set.
+
         self._clear()
         pad = {"padx": 40, "pady": 6}
         self._label(self.root, "Reset Password", font=FONT_TITLE).pack(pady=(40, 16))
@@ -333,6 +371,9 @@ class LoginWindow:
 
 class MainWindow:
     def __init__(self, user: dict):
+        # Builds the main application window with sidebar and chat panel
+        # for the authenticated user.
+
         self.user = user
         self.user_id = user["user_id"]
         self.username = user["username"]
@@ -358,6 +399,8 @@ class MainWindow:
         self.root.mainloop()
 
     def _center(self, w, h):
+        # Centers the main window on the screen.
+
         self.root.update_idletasks()
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
@@ -366,6 +409,8 @@ class MainWindow:
         self.root.geometry(f"{w}x{h}+{x}+{y}")
 
     def _build(self):
+        # Constructs the top bar with model selector, sidebar, and chat area.
+
         # ── Top bar ────────────────────────────────────────────────────────────
         topbar = tk.Frame(self.root, bg=BG_PANEL, pady=12)
         topbar.pack(fill="x")
@@ -419,6 +464,9 @@ class MainWindow:
         self._build_chat(chat_area)
 
     def _build_sidebar(self, parent):
+        # Builds the document management panel and profile panel with all
+        # buttons and dynamic content areas.
+
         tk.Label(parent, text="Documents", font=FONT_LABEL,
                 fg=TEXT, bg=BG_PANEL).pack(anchor="w", padx=16, pady=(16, 4))
 
@@ -487,6 +535,9 @@ class MainWindow:
                 **clear_session_kwargs).pack(anchor="w", padx=16, pady=2)
 
     def _build_chat(self, parent):
+        # Builds the scrollable chat display and the query input area
+        # with the Send button.
+
         answer_frame = tk.Frame(parent, bg=BG)
         answer_frame.pack(fill="both", expand=True, padx=16, pady=(16, 8))
 
@@ -535,6 +586,9 @@ class MainWindow:
     # ── Model selector ─────────────────────────────────────────────────────────
 
     def _on_model_change(self):
+        # Fires when the user switches between Llama and GPT-4o mini.
+        # Updates ACTIVE_LLM_PROVIDER in config and shows a status message.
+
         import config
         selected = self.model_var.get()
 
@@ -559,11 +613,16 @@ class MainWindow:
     # ── Event handlers ─────────────────────────────────────────────────────────
 
     def _on_enter(self, event):
+        # Submits the query when the user presses Enter without Shift.
+
         if not event.state & 0x1:
             self._submit_query()
             return "break"
 
     def _submit_query(self):
+        # Reads the input field, displays the user message in chat, and
+        # launches the orchestrator on a background thread.
+
         if self._submitting:
             return
         query = self.query_input.get("1.0", "end").strip()
@@ -596,10 +655,9 @@ class MainWindow:
         threading.Thread(target=query_thread, daemon=True).start()
 
     def _poll_status_queue(self):
-        """
-        Polls the status queue every 200ms and updates the loading line.
-        Stops when it receives the None sentinel.
-        """
+        # Polls the status queue every 200ms and updates the rolling
+        # status line with messages emitted by the agent pipeline.
+
         try:
             while True:
                 msg = self._status_queue.get_nowait()
@@ -611,10 +669,9 @@ class MainWindow:
         self._poll_after_id = self.root.after(200, self._poll_status_queue)
 
     def _update_loading_line(self, text: str):
-        """
-        Updates a single rolling line in the chat display with the latest status.
-        Replaces the previous loading line instead of appending a new one.
-        """
+        # Replaces the current status line in the chat display with
+        # the latest status message from the pipeline.
+
         self.answer_display.config(state="normal")
         if self._loading_line_start:
             self.answer_display.delete(self._loading_line_start, "end")
@@ -624,6 +681,9 @@ class MainWindow:
         self.answer_display.config(state="disabled")
 
     def _cancel_loading(self):
+        # Clears the status line and re-enables the input field when
+        # a query completes or errors.
+
         if self._poll_after_id:
             self.root.after_cancel(self._poll_after_id)
             self._poll_after_id = None
@@ -634,6 +694,9 @@ class MainWindow:
         self.answer_display.config(state="disabled")
 
     def _on_query_complete(self, result: dict):
+        # Receives the completed result dict from the orchestrator,
+        # displays the answer and citations, and updates the profile panel.
+
         self._submitting = False
         self._cancel_loading()
         self._set_status("● Ready", SUCCESS)
@@ -655,6 +718,9 @@ class MainWindow:
         self._refresh_profile()
 
     def _on_query_error(self, error: str):
+        # Displays an error message in the chat when the pipeline throws
+        # an unhandled exception.
+
         self._submitting = False
         self._cancel_loading()
         self._set_status("● Error", ERROR)
@@ -672,6 +738,9 @@ class MainWindow:
             self._append_chat("error", f"✗ Error: {error}\n\n")
 
     def _pick_files(self):
+        # Opens a file picker dialog for PDF and DOCX files and stores
+        # the selected paths for ingestion.
+
         files = filedialog.askopenfilenames(
             title="Select HR Policy Documents",
             filetypes=[("Supported files", "*.pdf *.docx"), ("PDF", "*.pdf"), ("Word", "*.docx")]
@@ -686,6 +755,9 @@ class MainWindow:
             self.ingest_btn.config(state="normal")
 
     def _run_ingestion(self):
+        # Launches the ingestion pipeline on a background thread for
+        # the selected files and shows a progress status.
+
         if not self.selected_files:
             return
         self._set_status("● Ingesting...", WARNING)
@@ -704,6 +776,9 @@ class MainWindow:
         threading.Thread(target=ingest_thread, daemon=True).start()
 
     def _on_ingestion_complete(self, result):
+        # Receives the ingestion result dict, shows a success message,
+        # and refreshes the document panel.
+
         self._set_status("● Ready", SUCCESS)
         self._append_chat("status", f"✓ Ingested {result['chunks_stored']} chunks from {result['files_processed']} document(s).\n\n")
         self.selected_files = []
@@ -712,17 +787,25 @@ class MainWindow:
         self._refresh_documents()
 
     def _on_ingestion_error(self, error: str):
+        # Displays an ingestion error message in the status bar.
+
         self._set_status("● Error", ERROR)
         self._append_chat("error", f"✗ Ingestion failed: {error}\n\n")
         self.ingest_btn.config(state="normal")
 
     def _clear_session(self):
+        # Clears the conversation history for the current session and
+        # shows a confirmation message in the chat.
+
         from src.memory.session import session_memory
         session_memory.clear_session(self.session_id)
         self.session_id = str(uuid.uuid4())
         self._append_chat("status", "Session cleared. Starting fresh.\n\n")
 
     def _clear_all_docs(self):
+        # Removes all ingested documents for the user from ChromaDB and
+        # the registry, then refreshes the document panel.
+
         if messagebox.askyesno("Clear Documents",
                                "Remove all documents? This cannot be undone."):
             from src.memory.registry import clear_all_documents
@@ -733,6 +816,9 @@ class MainWindow:
     # ── Sidebar refresh ────────────────────────────────────────────────────────
 
     def _refresh_documents(self):
+        # Redraws the document list in the sidebar from the current
+        # registry state.
+
         for w in self.docs_frame.winfo_children():
             w.destroy()
         from src.tools.document import get_registry
@@ -765,11 +851,17 @@ class MainWindow:
                     **remove_kwargs).pack(side="right")
 
     def _remove_doc(self, file_path: str):
+        # Removes a single document from the registry and ChromaDB and
+        # refreshes the document panel.
+
         from src.tools.document import remove_from_registry
         remove_from_registry(self.user_id, file_path)
         self._refresh_documents()
 
     def _refresh_profile(self):
+        # Redraws the profile facts list in the sidebar from the current
+        # saved profile state.
+
         for w in self.profile_frame.winfo_children():
             w.destroy()
         from src.memory.profile import load_profile
@@ -799,6 +891,8 @@ class MainWindow:
                     **delete_kwargs).pack(side="right")
 
     def _delete_fact(self, fact_key: str):
+        # Deletes a single profile fact and refreshes the profile panel.
+
         from src.memory.profile import delete_profile_fact
         delete_profile_fact(self.user_id, fact_key)
         self._refresh_profile()
@@ -806,12 +900,18 @@ class MainWindow:
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _append_chat(self, tag: str, text: str):
+        # Appends a tagged text segment to the chat display. Tags control
+        # color and font for user, assistant, citation, and status messages.
+
         self.answer_display.config(state="normal")
         self.answer_display.insert("end", text, tag)
         self.answer_display.see("end")
         self.answer_display.config(state="disabled")
 
     def _set_status(self, text: str, color: str):
+        # Updates the small status label in the top bar with a message
+        # and color appropriate to the current state.
+        
         self.status_var.set(text)
         self.status_label.config(fg=color)
 
@@ -819,6 +919,9 @@ class MainWindow:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main():
+    # Entry point that launches the login window and starts the Tkinter
+    # main loop. Passes on_login_success as a callback to LoginWindow.  
+
     def on_login_success(user: dict):
         MainWindow(user)
 

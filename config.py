@@ -1,8 +1,17 @@
 # config.py
-# Central configuration file for the HR Policy Assistant.
-# All settings, thresholds, model names, and paths are defined here.
+# Central configuration for all PolicyPro system settings.
+# All model names, thresholds, paths, and tuning parameters are defined here.
 # Never hardcode these values in any other file — always import from config.
-# To tune the system, edit this file only.
+# Loads environment variables from .env for API keys and URLs.
+# Creates required data directories at import time if they do not exist.
+#
+# Settings: LLM_MODEL, EMBEDDING_MODEL, OLLAMA_BASE_URL, OPENAI_API_KEY,
+#           OPENAI_MODEL, CHROMA_DB_PATH, COLLECTION_NAME, TOP_K_RESULTS,
+#           SIMILARITY_THRESHOLD, CHUNK_SIZE, CHUNK_OVERLAP, MAX_REACT_TURNS,
+#           ESCALATION_THRESHOLD, ROUTE_IN_SCOPE, ROUTE_HIGH_STAKES,
+#           ROUTE_OUT_OF_SCOPE, AUDIT_LOG_PATH, PROFILES_DIR, REGISTRY_DIR,
+#           USERS_FILE, SECURITY_QUESTIONS, RERANK_SKIP_THRESHOLD,
+#           ACTIVE_LLM_PROVIDER
 
 import os
 from dotenv import load_dotenv
