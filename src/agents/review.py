@@ -154,9 +154,8 @@ def inject_citations(answer: str, chunks_used: list) -> str:
             # Only include citations with meaningful section headers
             section = c.get("section_header", "")
             if any(skip in section for skip in [
-                "Page ", "Confidential", "NEXARION SOLUTIONS",
-                "Effective Date", "Version", "Table of Contents"
-            ]):
+                "Confidential", "Table of Contents"
+            ]) or section.strip().startswith("Page "):
                 continue
             seen.add(key)
             relevant_citations.append(c)
