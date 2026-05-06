@@ -2,7 +2,7 @@
 
 PolicyPro is a multi-agent AI system that gives employees instant, accurate, and cited answers to HR policy questions, grounded entirely in a company's own uploaded documents. It runs locally by default using Ollama and llama3.2, with optional GPT-4o mini support for improved reasoning quality.
 
-Built as a final project for the Agentic AI course at Northeastern University.
+Built as a final project for the Agentic AI course at Saint Joseph's University.
 
 ---
 
