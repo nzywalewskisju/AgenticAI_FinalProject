@@ -62,45 +62,6 @@ To reset a user's password from the terminal:
 
 python main.py --reset-password username
 
----
-
-## Project Structure
-
-hr-agent/
-├── gui.py                        # Desktop chat interface
-├── main.py                       # CLI entry point
-├── config.py                     # All system settings and thresholds
-├── requirements.txt
-├── .env                          # API keys (not committed)
-├── src/
-│   ├── agents/
-│   │   ├── orchestrator.py       # Central coordinator
-│   │   ├── reasoning.py          # ReAct loop and tool execution
-│   │   ├── review.py             # Quality gate
-│   │   └── governor.py           # Security, compliance, and audit logging
-│   ├── tools/
-│   │   ├── retrieval.py          # Semantic and keyword search
-│   │   ├── document.py           # Policy coverage checking and registry
-│   │   ├── governance.py         # PII detection, escalation scoring, compliance stamp
-│   │   ├── utils.py              # LLM routing, formatting, and JSON parsing
-│   │   └── email_alert.py        # HR email alerts
-│   ├── ingestion/
-│   │   ├── loader.py             # PDF and DOCX text extraction
-│   │   ├── chunker.py            # Hybrid chunking strategy
-│   │   └── embedder.py           # Embedding and ChromaDB storage
-│   └── memory/
-│       ├── session.py            # In-memory conversation history
-│       ├── profile.py            # Persistent user profile facts
-│       └── registry.py           # Document registry per user
-├── data/
-│   ├── users/users.json          # User accounts and hashed credentials
-│   ├── profiles/                 # Per-user profile facts
-│   └── registry/                 # Per-user document registry
-├── db/                           # ChromaDB vector database (per user)
-└── logs/
-    └── audit_log.jsonl           # Append-only audit trail
-
----
 
 ## How It Works
 
