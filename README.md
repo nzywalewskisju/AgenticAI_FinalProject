@@ -50,11 +50,11 @@ Make sure Ollama is running before launching. If it does not start automatically
 
 ollama serve
 
-Then launch the application:
+Then launch the application (recommended):
 
 python gui.py
 
-To run in CLI mode instead:
+To run in CLI mode instead (not recommended):
 
 python main.py
 
