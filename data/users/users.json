@@ -6,5 +6,13 @@
     "security_question": "What city were you born in?",
     "security_answer_hash": "$2b$12$WOb4NyLTGvBaAhie4/pzDugdM36ZmmRwDyBwi8gLI1JsfkUozgega",
     "created_at": "2026-04-28T21:51:25.958159"
+  },
+  {
+    "user_id": "a1f8ca92-6199-4ce6-b9bf-cb51d87891db",
+    "username": "dennisj",
+    "password_hash": "$2b$12$yS4pMhz0AYE0pT/pLIrMNeNfDMOVdImpLg5pRl.T4m69qxrSnpw6m",
+    "security_question": "What is your mother's maiden name?",
+    "security_answer_hash": "$2b$12$QIUL51FlO3VWPcFAsUlAseBreB85d4J7vcg7clADWUQ/VsSNJc6da",
+    "created_at": "2026-05-06T21:23:50.085124"
   }
 ]
