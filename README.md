@@ -76,16 +76,16 @@ hr-agent/
 │   ├── agents/
 │   │   ├── orchestrator.py       # Central coordinator
 │   │   ├── reasoning.py          # ReAct loop and tool execution
-│   │   ├── review.py             # Quality gate (grounding, alignment, tone, applicability)
+│   │   ├── review.py             # Quality gate
 │   │   └── governor.py           # Security, compliance, and audit logging
 │   ├── tools/
 │   │   ├── retrieval.py          # Semantic and keyword search
 │   │   ├── document.py           # Policy coverage checking and registry
 │   │   ├── governance.py         # PII detection, escalation scoring, compliance stamp
 │   │   ├── utils.py              # LLM routing, formatting, and JSON parsing
-│   │   └── email_alert.py        # HR email alerts for security and escalation events
+│   │   └── email_alert.py        # HR email alerts
 │   ├── ingestion/
-│   │   ├── loader.py             # PDF and DOCX text extraction and heading detection
+│   │   ├── loader.py             # PDF and DOCX text extraction
 │   │   ├── chunker.py            # Hybrid chunking strategy
 │   │   └── embedder.py           # Embedding and ChromaDB storage
 │   └── memory/
